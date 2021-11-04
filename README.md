@@ -1,10 +1,20 @@
-# Large-Scale-Study-of-Curiosity-Driven-Learning
-PyTorch implementation of the paper "Large-Scale Study of Curiosity-Driven Learning" https://arxiv.org/abs/1808.04355
+# Pytorch-Large-Scale-Curiosity
 
-X axes for below graphs are inaccurate. Will update it soon.
+This is a implementation of Large-Scale-Cruiosity using Pytorch, [here](https://github.com/openai/large-scale-curiosity) is the origin implementation and [here](https://openreview.net/forum?id=rJNwDjAqYX) is the paper. I don't use MPI or multiprossing because my laptab can't run with them. I tried but failed.  
 
-Pong, random features, 32 environments
-![Pong with random features](https://github.com/SPark9625/Large-Scale-Study-of-Curiosity-Driven-Learning/blob/master/resource/random-batch32.png)
+I test it on Atari and it works, and I have not run it on Roboschool or Unity3D.Maze. I really need Unity3D.Maze environment but can't find it in the origin implementation.
 
-Pong, IDF, 16 environments
-![Pong with IDF](https://github.com/SPark9625/Large-Scale-Study-of-Curiosity-Driven-Learning/blob/master/resource/OnlyCuriosityBN-IDF.png)
+Another thing, I don't implemente pixel2pixel feature, don't use it.
+
+## Requirement
+
+Python 3.6+  
+Pythorch 0.4  
+
+## Usage
+
+Download this repo and run run.py  
+
+    python3 run.py --feat_learning none     # for random feature
+    python3 run.py --feat_learning idf      # for IDF
+    python3 run.py --feat_learning vaesph   # for VAE
