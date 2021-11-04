@@ -1,7 +1,62 @@
 import numpy as np
 import torch
-from utils import small_convnet, flatten_dims, unflatten_first_dim, small_deconvnet
+from utils import small_convnet, small_mlp, flatten_dims, unflatten_first_dim, small_deconvnet
 
+class FeatureExtractorMLP(object):
+    def __init__(self, policy, features_shared_with_policy, feat_dim=None, layernormalize=None,
+                 scope='feature_extractor'):
+        self.scope = scope
+        self.features_shared_with_policy = features_shared_with_policy
+        self.feat_dim = feat_dim
+        self.layernormalize = layernormalize
+        self.policy = policy
+        self.hidsize = policy.hidsize
+        self.ob_space = policy.ob_space
+        self.ac_space = policy.ac_space
+        self.ob_mean = self.policy.ob_mean
+        self.ob_std = self.policy.ob_std
+
+        self.features_shared_with_policy = features_shared_with_policy
+        self.param_list = []
+        if features_shared_with_policy:
+            self.features_model = None
+        else:
+            self.features_model = small_mlp(self.ob_space, nl=torch.nn.LeakyReLU, feat_dim=self.feat_dim, last_nl=None, layernormalize=self.layernormalize)
+            self.param_list = self.param_list + [dict(params=self.features_model.parameters())]
+
+        self.scope = scope
+
+        self.features = None
+        self.next_features = None
+        self.ac = None
+        self.ob = None
+
+    def update_features(self, obs, last_obs):
+        if self.features_shared_with_policy:
+            self.features = self.policy.flat_features
+            last_features = self.policy.get_features(last_obs)
+        else:
+            self.features = self.get_features(obs)
+            last_features = self.get_features(last_obs)
+        self.next_features = torch.cat([self.features[:, 1:], last_features], 1)
+        self.ac = self.policy.ac
+        self.ob = self.policy.ob
+
+    def get_features(self, x):
+        x_has_timesteps = (len(x.shape) == 2)
+        if x_has_timesteps:
+            sh = x.shape
+            x = flatten_dims(x, len(self.ob_space.shape))
+        x = (x - self.ob_mean) / self.ob_std
+        # x = np.transpose(x, [i for i in range(len(x.shape)-3)] + [-1, -3, -2]) # transpose channel axis
+        x = x[:, None]
+        x = self.features_model(torch.tensor(x).float())
+        if x_has_timesteps:
+            x = unflatten_first_dim(x, sh)
+        return x
+
+    def get_loss(self, *arg, **kwarg):
+        return torch.tensor(0.0)
 
 class FeatureExtractor(object):
     def __init__(self, policy, features_shared_with_policy, feat_dim=None, layernormalize=None,

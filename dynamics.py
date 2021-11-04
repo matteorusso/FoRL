@@ -4,7 +4,6 @@ import torch
 from auxiliary_tasks import JustPixels
 from utils import small_convnet, flatten_dims, unflatten_first_dim, unet
 
-
 class Dynamics(object):
     def __init__(self, auxiliary_task, predict_from_pixels, feat_dim=None, scope='dynamics'):
         self.scope = scope
@@ -42,7 +41,7 @@ class Dynamics(object):
         self.ac = self.auxiliary_task.ac
         self.ob = self.auxiliary_task.ob
 
-    def get_features(self, x):
+    def get_features(self, x): # this not called when predict_from_pixels is False
         x_has_timesteps = (x.get_shape().ndims == 5)
         if x_has_timesteps:
             sh = x.shape

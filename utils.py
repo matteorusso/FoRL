@@ -105,6 +105,35 @@ def add_pos_bias(x):
         return x + b
 '''
 
+class small_mlp(torch.nn.Module):
+    def __init__(self, ob_space, nl, feat_dim, last_nl, layernormalize, batchnorm=False):
+        super(small_mlp, self).__init__()
+        self.in_dim = 1
+        self.nl = nl
+        self.last_nl = last_nl
+        self.mlp = torch.nn.Sequential(torch.nn.Linear(self.in_dim, feat_dim), self.nl())
+        self.layernormalize = layernormalize
+        self.init_weight()
+
+    def init_weight(self):
+        for m in self.mlp:
+            if isinstance(m, torch.nn.Linear):
+                torch.nn.init.xavier_uniform_(m.weight.data)
+                torch.nn.init.constant_(m.bias.data, 0.0)
+
+    def forward(self, x):
+        x = self.mlp(x)
+        if self.last_nl is not None:
+            x = self.last_nl(x)
+        if self.layernormalize:
+            x = self.layernorm(x)
+        return x
+
+    def layernorm(self, x):
+        m = torch.mean(x, -1, keepdim=True)
+        v = torch.std(x, -1, keepdim=True)
+        return (x - m) / (v + 1e-8)
+
 class small_convnet(torch.nn.Module):
     def __init__(self, ob_space, nl, feat_dim, last_nl, layernormalize, batchnorm=False):
         super(small_convnet, self).__init__()
