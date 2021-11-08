@@ -1,11 +1,4 @@
 ## Adapted from https://github.com/qqadssp/Pytorch-Large-Scale-Curiosity
-# Pytorch-Large-Scale-Curiosity
-
-This is a implementation of Large-Scale-Cruiosity using Pytorch, [here](https://github.com/openai/large-scale-curiosity) is the origin implementation and [here](https://openreview.net/forum?id=rJNwDjAqYX) is the paper. I don't use MPI or multiprossing because my laptab can't run with them. I tried but failed.  
-
-I test it on Atari and it works, and I have not run it on Roboschool or Unity3D.Maze. I really need Unity3D.Maze environment but can't find it in the origin implementation.
-
-Another thing, I don't implemente pixel2pixel feature, don't use it.
 
 ## Requirement
 
@@ -16,6 +9,4 @@ Pythorch 0.4
 
 Download this repo and run run.py  
 
-    python3 run.py --feat_learning none     # for random feature
-    python3 run.py --feat_learning idf      # for IDF
-    python3 run.py --feat_learning vaesph   # for VAE
+    python run.py --feat_learning none_mlp --env_kind frozenlake --use_oh 1 --env FrozenLake-v0 --ext_coeff 1.0 --int_coeff 0.0 --lr 5e-4 --ent_coeff 1e-3 --envs_per_process 32 --nlumps 2 --norm_rew 0
