@@ -28,7 +28,7 @@ class Rollout(object):
         self.buf_ext_rews = np.empty((nenvs, self.nsteps), np.float32)
         self.buf_acs = np.empty((nenvs, self.nsteps, *self.ac_space.shape), self.ac_space.dtype)
         self.buf_obs = np.empty((nenvs, self.nsteps, *self.ob_space.shape), self.ob_space.dtype)
-        self.buf_obs_last = np.empty((nenvs, self.nsegs_per_env, *self.ob_space.shape), np.float32)
+        self.buf_obs_last = np.empty((nenvs, self.nsegs_per_env, *self.ob_space.shape), self.ob_space.dtype)#np.float32)
 
         self.buf_news = np.zeros((nenvs, self.nsteps), np.float32)
         self.buf_new_last = self.buf_news[:, 0, ...].copy()
@@ -52,6 +52,8 @@ class Rollout(object):
         self.ep_infos_new = []
         for t in range(self.nsteps):
             self.rollout_step()
+        if np.random.rand() > 0.95:
+            print("6 * Reward/No. steps =", np.mean(self.buf_ext_rews)*6)
         self.calculate_reward()
         self.update_info()
 
@@ -72,7 +74,8 @@ class Rollout(object):
             else:
                 acs = self.acs_record[l]
                 obs, prevrews, news, infos = self.envs[l].step_async(acs)
-
+                # if np.random.rand() >= 0.95:
+                #     print('Avg. ext. reward =', prevrews.shape)
             acs, vpreds, nlps = self.policy.get_ac_value_nlp(obs)
             self.acs_record[l] = acs
 

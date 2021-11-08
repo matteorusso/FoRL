@@ -28,8 +28,8 @@ class MLPPolicy(object):
 
         self.pd_hidden = torch.nn.Sequential(torch.nn.Linear(feat_dim, hidsize),
                                              torch.nn.ReLU(),
-                                             torch.nn.Linear(hidsize, hidsize),
-                                             torch.nn.ReLU(),
+                                             # torch.nn.Linear(hidsize, hidsize),
+                                             # torch.nn.ReLU(),
                                              )
         self.pd_head = torch.nn.Linear(hidsize, pdparamsize)
         self.vf_head = torch.nn.Linear(hidsize, 1)

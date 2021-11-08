@@ -1,10 +1,12 @@
 import numpy as np
 import torch
+from torch import nn
+import torch.nn.functional as F
 from utils import small_convnet, small_mlp, flatten_dims, unflatten_first_dim, small_deconvnet
 
 class FeatureExtractorMLP(object):
     def __init__(self, policy, features_shared_with_policy, feat_dim=None, layernormalize=None,
-                 scope='feature_extractor'):
+                 scope='feature_extractor', use_oh=True):
         self.scope = scope
         self.features_shared_with_policy = features_shared_with_policy
         self.feat_dim = feat_dim
@@ -30,6 +32,7 @@ class FeatureExtractorMLP(object):
         self.next_features = None
         self.ac = None
         self.ob = None
+        self.use_oh = use_oh
 
     def update_features(self, obs, last_obs):
         if self.features_shared_with_policy:
@@ -47,10 +50,17 @@ class FeatureExtractorMLP(object):
         if x_has_timesteps:
             sh = x.shape
             x = flatten_dims(x, len(self.ob_space.shape))
-        x = (x - self.ob_mean) / self.ob_std
         # x = np.transpose(x, [i for i in range(len(x.shape)-3)] + [-1, -3, -2]) # transpose channel axis
-        x = x[:, None]
-        x = self.features_model(torch.tensor(x).float())
+        if self.use_oh:
+            x = torch.tensor(x)#.float()
+            # print(x)
+            # print(self.ob_space.n)
+            x = F.one_hot(x, num_classes=self.ob_space.n)
+        else:
+            x = (x - self.ob_mean) / self.ob_std
+            x = x[:, None]
+            x = torch.tensor(x).float()
+            x = self.features_model(x)
         if x_has_timesteps:
             x = unflatten_first_dim(x, sh)
         return x

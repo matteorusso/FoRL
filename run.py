@@ -44,8 +44,8 @@ class Trainer(object):
             scope='pol',
             ob_space=self.ob_space,
             ac_space=self.ac_space,
-            hidsize=512,
-            feat_dim=512,
+            hidsize=8,#32,#512,
+            feat_dim=self.ob_space.n if hps['use_oh'] else 512,
             ob_mean=self.ob_mean,
             ob_std=self.ob_std,
             layernormalize=False,
@@ -53,18 +53,30 @@ class Trainer(object):
 
         self.feature_extractor = {"none": FeatureExtractor,
                                   "none_mlp": FeatureExtractorMLP,
+                                  "oh_mlp": FeatureExtractorMLP,
                                   "idf": InverseDynamics,
                                   "vaesph": partial(VAE, spherical_obs=True),
                                   "vaenonsph": partial(VAE, spherical_obs=False),
                                   "pix2pix": JustPixels}[hps['feat_learning']]
-        self.feature_extractor = self.feature_extractor(policy=self.policy,
-                                                        # if we use VAE, 'features_shared_with_policy' should be set to False,
-                                                        # because the shape of output_features of VAE.get_features is feat_dims * 2, including means and stds,
-                                                        # but the shape of out_features of policy.get_features is feat_dims,
-                                                        # only means is used as features exposed to dynamics 
-                                                        features_shared_with_policy=False, 
-                                                        feat_dim=512,
-                                                        layernormalize=hps['layernorm'])
+        if hps['use_oh']:
+            self.feature_extractor = self.feature_extractor(policy=self.policy,
+                                                            # if we use VAE, 'features_shared_with_policy' should be set to False,
+                                                            # because the shape of output_features of VAE.get_features is feat_dims * 2, including means and stds,
+                                                            # but the shape of out_features of policy.get_features is feat_dims,
+                                                            # only means is used as features exposed to dynamics 
+                                                            features_shared_with_policy=False, 
+                                                            feat_dim=self.ob_space.n,
+                                                            layernormalize=hps['layernorm'],
+                                                            use_oh=hps['use_oh'])
+        else:
+            self.feature_extractor = self.feature_extractor(policy=self.policy,
+                                                            # if we use VAE, 'features_shared_with_policy' should be set to False,
+                                                            # because the shape of output_features of VAE.get_features is feat_dims * 2, including means and stds,
+                                                            # but the shape of out_features of policy.get_features is feat_dims,
+                                                            # only means is used as features exposed to dynamics 
+                                                            features_shared_with_policy=False, 
+                                                            feat_dim=512,
+                                                            layernormalize=hps['layernorm'])
 
         # self.policy = CnnPolicy(
         #     scope='pol',
@@ -94,7 +106,7 @@ class Trainer(object):
         self.dynamics = Dynamics if hps['feat_learning'] != 'pix2pix' else UNet
         self.dynamics = self.dynamics(auxiliary_task=self.feature_extractor,
                                       predict_from_pixels=hps['dyn_from_pixels'],
-                                      feat_dim=512)
+                                      feat_dim=self.ob_space.n if hps['use_oh'] else 512)
 
         self.agent = PpoOptimizer(
             scope='ppo',
@@ -130,7 +142,7 @@ class Trainer(object):
         while True:
             info = self.agent.step()
             if info['update']:
-                print('Avg. reward =', info['update']['rew_mean'])
+                #print('Avg. reward =', info['update']['rew_mean'])
                 logger.logkvs(info['update'])
                 #logger.dumpkvs()
             if self.agent.rollout.stats['tcount'] > self.num_timesteps:
@@ -161,7 +173,7 @@ def make_env_all_params(rank, add_monitor, args):
         elif args["env"] == "hockey":
             env = make_robo_hockey()
     elif args["env_kind"] == 'frozenlake':
-            env = gym.make(args['env'])
+            env = gym.make(args['env'], is_slippery=False)
 
     if add_monitor:
         env = Monitor(env, osp.join(logger.get_dir(), '%.2i' % rank))
@@ -224,6 +236,8 @@ if __name__ == '__main__':
     parser.add_argument('--layernorm', type=int, default=0)
     parser.add_argument('--feat_learning', type=str, default="vaenonsph",
                         choices=["none", "none_mlp", "idf", "vaesph", "vaenonsph", "pix2pix"])
+    parser.add_argument('--use_oh', type=int, default=0)
+    parser.add_argument('--use_NSI', type=int, default=0)
 
     args = parser.parse_args()
 
