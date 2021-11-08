@@ -40,95 +40,146 @@ class Trainer(object):
         self.num_timesteps = num_timesteps
         self._set_env_vars()
 
-        self.policy = MLPPolicy(
-            scope='pol',
-            ob_space=self.ob_space,
-            ac_space=self.ac_space,
-            hidsize=8,#32,#512,
-            feat_dim=self.ob_space.n if hps['use_oh'] else 512,
-            ob_mean=self.ob_mean,
-            ob_std=self.ob_std,
-            layernormalize=False,
-            nl=torch.nn.LeakyReLU)
+        if hps['use_NSI']:
 
-        self.feature_extractor = {"none": FeatureExtractor,
-                                  "none_mlp": FeatureExtractorMLP,
-                                  "oh_mlp": FeatureExtractorMLP,
-                                  "idf": InverseDynamics,
-                                  "vaesph": partial(VAE, spherical_obs=True),
-                                  "vaenonsph": partial(VAE, spherical_obs=False),
-                                  "pix2pix": JustPixels}[hps['feat_learning']]
-        if hps['use_oh']:
-            self.feature_extractor = self.feature_extractor(policy=self.policy,
-                                                            # if we use VAE, 'features_shared_with_policy' should be set to False,
-                                                            # because the shape of output_features of VAE.get_features is feat_dims * 2, including means and stds,
-                                                            # but the shape of out_features of policy.get_features is feat_dims,
-                                                            # only means is used as features exposed to dynamics 
-                                                            features_shared_with_policy=False, 
-                                                            feat_dim=self.ob_space.n,
-                                                            layernormalize=hps['layernorm'],
-                                                            use_oh=hps['use_oh'])
+            self.policy = NSIPolicy(
+                ob_space=self.ob_space,
+                ac_space=self.ac_space,
+                hidsize=8,
+                feat_dim=self.ob_space.n if hps['use_oh'] else 512,
+                ob_mean=self.ob_mean,
+                ob_std=self.ob_std,
+                layernormalize=False,
+                nl=torch.nn.LeakyReLU)
+
+            self.feature_extractor = {"none": FeatureExtractor,
+                "none_mlp": FeatureExtractorMLP}[hps['feat_learning']]
+
+            if hps['use_oh']:
+                self.feature_extractor = self.feature_extractor(policy=self.policy,
+                                                                features_shared_with_policy=False, 
+                                                                feat_dim=self.ob_space.n,
+                                                                layernormalize=hps['layernorm'],
+                                                                use_oh=hps['use_oh'])
+            else:
+                self.feature_extractor = self.feature_extractor(policy=self.policy,
+                                                                features_shared_with_policy=False, 
+                                                                feat_dim=512,
+                                                                layernormalize=hps['layernorm'])
+
+            self.agent = NSIOptimizer(
+                scope='ppo',
+                ob_space=self.ob_space,
+                ac_space=self.ac_space,
+                stochpol=self.policy,
+                use_news=hps['use_news'],
+                gamma=hps['gamma'],
+                lam=hps["lambda"],
+                nepochs=hps['nepochs'],
+                nminibatches=hps['nminibatches'],
+                lr=hps['lr'],
+                cliprange=0.1,
+                nsteps_per_seg=hps['nsteps_per_seg'],
+                nsegs_per_env=hps['nsegs_per_env'],
+                ent_coef=hps['ent_coeff'],
+                normrew=hps['norm_rew'],
+                normadv=hps['norm_adv'],
+                ext_coeff=hps['ext_coeff'],
+                int_coeff=hps['int_coeff'],
+                dynamics= self.dynamics
+            )
+
         else:
-            self.feature_extractor = self.feature_extractor(policy=self.policy,
-                                                            # if we use VAE, 'features_shared_with_policy' should be set to False,
-                                                            # because the shape of output_features of VAE.get_features is feat_dims * 2, including means and stds,
-                                                            # but the shape of out_features of policy.get_features is feat_dims,
-                                                            # only means is used as features exposed to dynamics 
-                                                            features_shared_with_policy=False, 
-                                                            feat_dim=512,
-                                                            layernormalize=hps['layernorm'])
+            self.policy = MLPPolicy(
+                scope='pol',
+                ob_space=self.ob_space,
+                ac_space=self.ac_space,
+                hidsize=8,#32,#512,
+                feat_dim=self.ob_space.n if hps['use_oh'] else 512,
+                ob_mean=self.ob_mean,
+                ob_std=self.ob_std,
+                layernormalize=False,
+                nl=torch.nn.LeakyReLU,
+                use_oh=hps['use_oh'])
 
-        # self.policy = CnnPolicy(
-        #     scope='pol',
-        #     ob_space=self.ob_space,
-        #     ac_space=self.ac_space,
-        #     hidsize=512,
-        #     feat_dim=512,
-        #     ob_mean=self.ob_mean,
-        #     ob_std=self.ob_std,
-        #     layernormalize=False,
-        #     nl=torch.nn.LeakyReLU)
+            self.feature_extractor = {"none": FeatureExtractor,
+                                      "none_mlp": FeatureExtractorMLP,
+                                      "oh_mlp": FeatureExtractorMLP,
+                                      "idf": InverseDynamics,
+                                      "vaesph": partial(VAE, spherical_obs=True),
+                                      "vaenonsph": partial(VAE, spherical_obs=False),
+                                      "pix2pix": JustPixels}[hps['feat_learning']]
+            if hps['use_oh']:
+                self.feature_extractor = self.feature_extractor(policy=self.policy,
+                                                                # if we use VAE, 'features_shared_with_policy' should be set to False,
+                                                                # because the shape of output_features of VAE.get_features is feat_dims * 2, including means and stds,
+                                                                # but the shape of out_features of policy.get_features is feat_dims,
+                                                                # only means is used as features exposed to dynamics 
+                                                                features_shared_with_policy=True, 
+                                                                feat_dim=self.ob_space.n,
+                                                                layernormalize=hps['layernorm'],
+                                                                use_oh=hps['use_oh'])
+            else:
+                self.feature_extractor = self.feature_extractor(policy=self.policy,
+                                                                # if we use VAE, 'features_shared_with_policy' should be set to False,
+                                                                # because the shape of output_features of VAE.get_features is feat_dims * 2, including means and stds,
+                                                                # but the shape of out_features of policy.get_features is feat_dims,
+                                                                # only means is used as features exposed to dynamics 
+                                                                features_shared_with_policy=False, 
+                                                                feat_dim=512,
+                                                                layernormalize=hps['layernorm'])
 
-        # self.feature_extractor = {"none": FeatureExtractor,
-        #                           "idf": InverseDynamics,
-        #                           "vaesph": partial(VAE, spherical_obs=True),
-        #                           "vaenonsph": partial(VAE, spherical_obs=False),
-        #                           "pix2pix": JustPixels}[hps['feat_learning']]
-        # self.feature_extractor = self.feature_extractor(policy=self.policy,
-        #                                                 # if we use VAE, 'features_shared_with_policy' should be set to False,
-        #                                                 # because the shape of output_features of VAE.get_features is feat_dims * 2, including means and stds,
-        #                                                 # but the shape of out_features of policy.get_features is feat_dims,
-        #                                                 # only means is used as features exposed to dynamics 
-        #                                                 features_shared_with_policy=False, 
-        #                                                 feat_dim=512,
-        #                                                 layernormalize=hps['layernorm'])
+            # self.policy = CnnPolicy(
+            #     scope='pol',
+            #     ob_space=self.ob_space,
+            #     ac_space=self.ac_space,
+            #     hidsize=512,
+            #     feat_dim=512,
+            #     ob_mean=self.ob_mean,
+            #     ob_std=self.ob_std,
+            #     layernormalize=False,
+            #     nl=torch.nn.LeakyReLU)
 
-        self.dynamics = Dynamics if hps['feat_learning'] != 'pix2pix' else UNet
-        self.dynamics = self.dynamics(auxiliary_task=self.feature_extractor,
-                                      predict_from_pixels=hps['dyn_from_pixels'],
-                                      feat_dim=self.ob_space.n if hps['use_oh'] else 512)
+            # self.feature_extractor = {"none": FeatureExtractor,
+            #                           "idf": InverseDynamics,
+            #                           "vaesph": partial(VAE, spherical_obs=True),
+            #                           "vaenonsph": partial(VAE, spherical_obs=False),
+            #                           "pix2pix": JustPixels}[hps['feat_learning']]
+            # self.feature_extractor = self.feature_extractor(policy=self.policy,
+            #                                                 # if we use VAE, 'features_shared_with_policy' should be set to False,
+            #                                                 # because the shape of output_features of VAE.get_features is feat_dims * 2, including means and stds,
+            #                                                 # but the shape of out_features of policy.get_features is feat_dims,
+            #                                                 # only means is used as features exposed to dynamics 
+            #                                                 features_shared_with_policy=False, 
+            #                                                 feat_dim=512,
+            #                                                 layernormalize=hps['layernorm'])
 
-        self.agent = PpoOptimizer(
-            scope='ppo',
-            ob_space=self.ob_space,
-            ac_space=self.ac_space,
-            stochpol=self.policy,
-            use_news=hps['use_news'],
-            gamma=hps['gamma'],
-            lam=hps["lambda"],
-            nepochs=hps['nepochs'],
-            nminibatches=hps['nminibatches'],
-            lr=hps['lr'],
-            cliprange=0.1,
-            nsteps_per_seg=hps['nsteps_per_seg'],
-            nsegs_per_env=hps['nsegs_per_env'],
-            ent_coef=hps['ent_coeff'],
-            normrew=hps['norm_rew'],
-            normadv=hps['norm_adv'],
-            ext_coeff=hps['ext_coeff'],
-            int_coeff=hps['int_coeff'],
-            dynamics= self.dynamics
-        )
+            self.dynamics = Dynamics if hps['feat_learning'] != 'pix2pix' else UNet
+            self.dynamics = self.dynamics(auxiliary_task=self.feature_extractor,
+                                          predict_from_pixels=hps['dyn_from_pixels'],
+                                          feat_dim=self.ob_space.n if hps['use_oh'] else 512)
+
+            self.agent = PpoOptimizer(
+                scope='ppo',
+                ob_space=self.ob_space,
+                ac_space=self.ac_space,
+                stochpol=self.policy,
+                use_news=hps['use_news'],
+                gamma=hps['gamma'],
+                lam=hps["lambda"],
+                nepochs=hps['nepochs'],
+                nminibatches=hps['nminibatches'],
+                lr=hps['lr'],
+                cliprange=0.1,
+                nsteps_per_seg=hps['nsteps_per_seg'],
+                nsegs_per_env=hps['nsegs_per_env'],
+                ent_coef=hps['ent_coeff'],
+                normrew=hps['norm_rew'],
+                normadv=hps['norm_adv'],
+                ext_coeff=hps['ext_coeff'],
+                int_coeff=hps['int_coeff'],
+                dynamics= self.dynamics
+            )
 
     def _set_env_vars(self):
         env = self.make_env(0, add_monitor=False)

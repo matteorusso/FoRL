@@ -34,6 +34,8 @@ class Dynamics(object):
         if not self.predict_from_pixels:
             self.features = self.auxiliary_task.features.detach() # I'm not sure if there need a .detach for better performence, just keep it.
             self.next_features = self.auxiliary_task.next_features.detach()
+            print(self.features, 'FEAT')
+            print(self.next_features, 'NEXT')
         else:
             self.features = self.get_features(obs)
             last_features = self.get_features(last_ob)

@@ -108,10 +108,10 @@ def add_pos_bias(x):
 class small_mlp(torch.nn.Module):
     def __init__(self, ob_space, nl, feat_dim, last_nl, layernormalize, batchnorm=False):
         super(small_mlp, self).__init__()
-        self.in_dim = 1
+        self.in_dim = ob_space.n
         self.nl = nl
         self.last_nl = last_nl
-        self.mlp = torch.nn.Sequential(torch.nn.Linear(self.in_dim, feat_dim), self.nl())
+        self.mlp = torch.nn.Sequential(torch.nn.Linear(self.in_dim, feat_dim), self.nl(), torch.nn.Linear(feat_dim, feat_dim))
         self.layernormalize = layernormalize
         self.init_weight()
 
