@@ -134,6 +134,8 @@ class PpoOptimizer(object):
 
                 acs = self.rollout.buf_acs[mbenvinds]
                 rews = self.rollout.buf_rews[mbenvinds]
+                # if np.random.rand() >= 0.95:
+                #     print("No. steps to goal/OPT =", np.mean(rews)*6)
                 vpreds = self.rollout.buf_vpreds[mbenvinds]
                 nlps = self.rollout.buf_nlps[mbenvinds]
                 obs = self.rollout.buf_obs[mbenvinds]
@@ -170,7 +172,7 @@ class PpoOptimizer(object):
 
                 approxkl = 0.5 * torch.mean((neglogpac - nlps) ** 2)
                 clipfrac = torch.mean((torch.abs(pg_losses2 - pg_loss_surr) > 1e-6).float())
-                feat_var = torch.std(self.dynamics.auxiliary_task.features)
+                feat_var = torch.std(self.dynamics.auxiliary_task.features.float())
 
                 total_loss = pg_loss + ent_loss + vf_loss + feat_loss + dyn_loss
 

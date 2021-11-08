@@ -1,5 +1,6 @@
 import numpy as np
 import torch
+import torch.nn.functional as F
 from distributions import make_pdtype
 
 from utils import small_convnet, flatten_dims, unflatten_first_dim, small_mlp
@@ -7,7 +8,7 @@ from utils import small_convnet, flatten_dims, unflatten_first_dim, small_mlp
 
 class MLPPolicy(object):
     def __init__(self, ob_space, ac_space, hidsize,
-                 ob_mean, ob_std, feat_dim, layernormalize, nl, scope="policy"):
+                 ob_mean, ob_std, feat_dim, layernormalize, nl, scope="policy", use_oh=True):
         if layernormalize:
             print("Warning: policy is operating on top of layer-normed features. It might slow down the training.")
         self.layernormalize = layernormalize
@@ -28,8 +29,8 @@ class MLPPolicy(object):
 
         self.pd_hidden = torch.nn.Sequential(torch.nn.Linear(feat_dim, hidsize),
                                              torch.nn.ReLU(),
-                                             torch.nn.Linear(hidsize, hidsize),
-                                             torch.nn.ReLU(),
+                                             # torch.nn.Linear(hidsize, hidsize),
+                                             # torch.nn.ReLU(),
                                              )
         self.pd_head = torch.nn.Linear(hidsize, pdparamsize)
         self.vf_head = torch.nn.Linear(hidsize, 1)
@@ -42,10 +43,13 @@ class MLPPolicy(object):
         self.ac = None
         self.ob = None
 
+        self.use_oh = use_oh
+
     def update_features(self, ob, ac):
         sh = ob.shape # ob.shape = [nenvs, timestep, H, W, C]. Can timestep > 1 ?
-        x = flatten_dims(ob, len(self.ob_space.shape))[:, None] # flat first two dims of ob.shape and get a shape of [N, H, W, C].
+        x = flatten_dims(ob, len(self.ob_space.shape)) # flat first two dims of ob.shape and get a shape of [N, H, W, C].
         flat_features = self.get_features(x) # [N, feat_dim]
+        print(flat_features.shape)
         self.flat_features = flat_features
         hidden = self.pd_hidden(flat_features)
         pdparam = self.pd_head(hidden)
@@ -57,15 +61,18 @@ class MLPPolicy(object):
 
 
     def get_features(self, x):
-        x_has_timesteps = (len(x.shape) == 3) # used to be 5
+        x_has_timesteps = (len(x.shape) == 2)
         if x_has_timesteps:
             sh = x.shape
-            x = flatten_two_dims(x)
-
-        x = (x - self.ob_mean) / self.ob_std
-        #x = np.transpose(x, [i for i in range(len(x.shape)-3)] + [-1, -3, -2]) # [N, H, W, C] --> [N, C, H, W]
-        x = self.features_model(torch.tensor(x).float())
-
+            x = flatten_dims(x, len(self.ob_space.shape))
+        if self.use_oh:
+            x = torch.tensor(x)
+            x = F.one_hot(x, num_classes=self.ob_space.n).float()
+        else:
+            x = (x - self.ob_mean) / self.ob_std
+            x = x[:, None]
+            x = torch.tensor(x).float()
+            x = self.features_model(x)
         if x_has_timesteps:
             x = unflatten_first_dim(x, sh)
         return x
