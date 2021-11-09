@@ -1,2 +1,0 @@
-Logging to tmp
-episode recordings saved to tmp/env0_0.pk
