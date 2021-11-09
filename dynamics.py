@@ -1,11 +1,20 @@
 import numpy as np
 import torch
-
+import torch.nn.functional as F
+import scipy
+from scipy.spatial.distance import jensenshannon
 from auxiliary_tasks import JustPixels
 from utils import small_convnet, flatten_dims, unflatten_first_dim, unet
 
+
 class Dynamics(object):
-    def __init__(self, auxiliary_task, predict_from_pixels, feat_dim=None, scope='dynamics'):
+    def __init__(
+        self,
+        auxiliary_task,
+        predict_from_pixels,
+        feat_dim=None,
+        scope="dynamics",
+    ):
         self.scope = scope
         self.auxiliary_task = auxiliary_task
         self.hidsize = self.auxiliary_task.hidsize
@@ -16,14 +25,30 @@ class Dynamics(object):
         self.predict_from_pixels = predict_from_pixels
         self.param_list = []
         if predict_from_pixels:
-            self.features_model = small_convnet(self.ob_space, nl=torch.nn.LeakyReLU, feat_dim=self.feat_dim, last_nl=torch.nn.LeakyReLU, layernormalize=False)
-            self.param_list = self.param_list + [dict(params = self.features_model.parameters())]
+            self.features_model = small_convnet(
+                self.ob_space,
+                nl=torch.nn.LeakyReLU,
+                feat_dim=self.feat_dim,
+                last_nl=torch.nn.LeakyReLU,
+                layernormalize=False,
+            )
+            self.param_list = self.param_list + [
+                dict(params=self.features_model.parameters())
+            ]
         else:
             self.features_model = None
 
         # not understand why we need a net in the origin implementation
-        self.loss_net = loss_net(nblocks=4, feat_dim=self.feat_dim, ac_dim=self.ac_space.n, out_feat_dim=self.feat_dim, hidsize=self.hidsize)
-        self.param_list = self.param_list + [dict(params=self.loss_net.parameters())]
+        self.loss_net = loss_net(
+            nblocks=4,
+            feat_dim=self.feat_dim,
+            ac_dim=self.ac_space.n,
+            out_feat_dim=self.feat_dim,
+            hidsize=self.hidsize,
+        )
+        self.param_list = self.param_list + [
+            dict(params=self.loss_net.parameters())
+        ]
 
         self.features = None
         self.next_features = None
@@ -32,23 +57,31 @@ class Dynamics(object):
 
     def update_features(self, obs, last_obs):
         if not self.predict_from_pixels:
-            self.features = self.auxiliary_task.features.detach() # I'm not sure if there need a .detach for better performence, just keep it.
+            self.features = (
+                self.auxiliary_task.features.detach()
+            )  # I'm not sure if there need a .detach for better performence, just keep it.
             self.next_features = self.auxiliary_task.next_features.detach()
-            print(self.features, 'FEAT')
-            print(self.next_features, 'NEXT')
+            # print(self.features, 'FEAT')
+            # print(self.next_features, 'NEXT')
         else:
             self.features = self.get_features(obs)
             last_features = self.get_features(last_ob)
-            self.next_features = torch.cat([self.features[:, 1:], last_features], 1)
+            self.next_features = torch.cat(
+                [self.features[:, 1:], last_features], 1
+            )
         self.ac = self.auxiliary_task.ac
         self.ob = self.auxiliary_task.ob
 
-    def get_features(self, x): # this not called when predict_from_pixels is False
-        x_has_timesteps = (x.get_shape().ndims == 5)
+    def get_features(
+        self, x
+    ):  # this not called when predict_from_pixels is False
+        x_has_timesteps = x.get_shape().ndims == 5
         if x_has_timesteps:
             sh = x.shape
             x = flatten_dims(x, self.ob_space.n)
-        x = np.transpose(x, [i for i in range(len(x.shape)-3)] + [-1, -3, -2])
+        x = np.transpose(
+            x, [i for i in range(len(x.shape) - 3)] + [-1, -3, -2]
+        )
         x = (x - self.ob_mean) / self.ob_std
         x = self.features_model(x)
         if x_has_timesteps:
@@ -59,7 +92,9 @@ class Dynamics(object):
         ac = self.ac
         sh = ac.shape
         ac = flatten_dims(ac, len(self.ac_space.shape))
-        ac = torch.zeros(ac.shape + (self.ac_space.n,)).scatter_(1, torch.tensor(ac).unsqueeze(1), 1) # one_hot(self.ac, self.ac_space.n, axis=2)
+        ac = torch.zeros(ac.shape + (self.ac_space.n,)).scatter_(
+            1, torch.tensor(ac).unsqueeze(1), 1
+        )  # one_hot(self.ac, self.ac_space.n, axis=2)
         ac = unflatten_first_dim(ac, sh)
 
         features = self.features
@@ -70,7 +105,10 @@ class Dynamics(object):
         ac = flatten_dims(ac, 1)
         x = self.loss_net(x, ac)
         x = unflatten_first_dim(x, sh)
-        return torch.mean((x - next_features) ** 2, -1)
+
+        # Implement KL or JS
+        return torch.sum(F.kl_div(x, next_features, reduction="none"), dim=-1)
+        # return torch.mean((x - next_features) ** 2, -1)
 
     def calculate_loss(self, obs, last_obs, acs):
         n_chunks = 4
@@ -93,20 +131,32 @@ class Dynamics(object):
                 losses = torch.cat((losses, loss), 0)
         return losses.data.numpy()
 
+
 class loss_net(torch.nn.Module):
-    def __init__(self, nblocks, feat_dim, ac_dim, out_feat_dim, hidsize, activation=torch.nn.LeakyReLU):
+    def __init__(
+        self,
+        nblocks,
+        feat_dim,
+        ac_dim,
+        out_feat_dim,
+        hidsize,
+        activation=torch.nn.LeakyReLU,
+    ):
         super(loss_net, self).__init__()
         self.nblocks = nblocks
         self.feat_dim = feat_dim
         self.ac_dim = ac_dim
         self.out_feat_dim = out_feat_dim
         self.activation = activation
-        model_list = [torch.nn.Linear(feat_dim+ac_dim, hidsize), activation()]
+        model_list = [
+            torch.nn.Linear(feat_dim + ac_dim, hidsize),
+            activation(),
+        ]
         for _ in range(self.nblocks):
-            model_list.append(torch.nn.Linear(hidsize+ac_dim, hidsize))
+            model_list.append(torch.nn.Linear(hidsize + ac_dim, hidsize))
             model_list.append(activation())
-            model_list.append(torch.nn.Linear(hidsize+ac_dim, hidsize))
-        model_list.append(torch.nn.Linear(hidsize+ac_dim, out_feat_dim))
+            model_list.append(torch.nn.Linear(hidsize + ac_dim, hidsize))
+        model_list.append(torch.nn.Linear(hidsize + ac_dim, out_feat_dim))
         self.model_list = model_list
         self.init_weight()
 
@@ -125,7 +175,8 @@ class loss_net(torch.nn.Module):
         for _ in range(self.nblocks):
             x0 = x
             for _ in range(3):
-                if isinstance(self.model_list[idx], torch.nn.Linear): x = torch.cat((x, ac), dim=-1)
+                if isinstance(self.model_list[idx], torch.nn.Linear):
+                    x = torch.cat((x, ac), dim=-1)
                 x = self.model_list[idx](x)
                 idx += 1
             x = x + x0
@@ -135,14 +186,25 @@ class loss_net(torch.nn.Module):
         assert x.shape[-1] == self.out_feat_dim
         return x
 
+
 class UNet(Dynamics):
-    def __init__(self, auxiliary_task, predict_from_pixels, feat_dim=None, scope='pixel_dynamics'):
+    def __init__(
+        self,
+        auxiliary_task,
+        predict_from_pixels,
+        feat_dim=None,
+        scope="pixel_dynamics",
+    ):
         assert isinstance(auxiliary_task, JustPixels)
-        assert not predict_from_pixels, "predict from pixels must be False, it's set up to predict from features that are normalized pixels."
-        super(UNet, self).__init__(auxiliary_task=auxiliary_task,
-                                   predict_from_pixels=predict_from_pixels,
-                                   feat_dim=feat_dim,
-                                   scope=scope)
+        assert (
+            not predict_from_pixels
+        ), "predict from pixels must be False, it's set up to predict from features that are normalized pixels."
+        super(UNet, self).__init__(
+            auxiliary_task=auxiliary_task,
+            predict_from_pixels=predict_from_pixels,
+            feat_dim=feat_dim,
+            scope=scope,
+        )
 
     def get_features(self, x, reuse):
         raise NotImplementedError
@@ -160,12 +222,27 @@ class UNet(Dynamics):
             elif x.get_shape().ndims == 4:
                 sh = tf.shape(x)
                 return tf.concat(
-                    [x, ac_four_dim + tf.zeros([sh[0], sh[1], sh[2], ac_four_dim.get_shape()[3].value], tf.float32)],
-                    axis=-1)
+                    [
+                        x,
+                        ac_four_dim
+                        + tf.zeros(
+                            [
+                                sh[0],
+                                sh[1],
+                                sh[2],
+                                ac_four_dim.get_shape()[3].value,
+                            ],
+                            tf.float32,
+                        ),
+                    ],
+                    axis=-1,
+                )
 
         with tf.variable_scope(self.scope):
             x = flatten_two_dims(self.features)
             x = unet(x, nl=nl, feat_dim=self.feat_dim, cond=add_ac)
             x = unflatten_first_dim(x, sh)
         self.prediction_pixels = x * self.ob_std + self.ob_mean
-        return tf.reduce_mean((x - tf.stop_gradient(self.out_features)) ** 2, [2, 3, 4])
+        return tf.reduce_mean(
+            (x - tf.stop_gradient(self.out_features)) ** 2, [2, 3, 4]
+        )

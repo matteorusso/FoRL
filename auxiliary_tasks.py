@@ -2,11 +2,25 @@ import numpy as np
 import torch
 from torch import nn
 import torch.nn.functional as F
-from utils import small_convnet, small_mlp, flatten_dims, unflatten_first_dim, small_deconvnet
+from utils import (
+    small_convnet,
+    small_mlp,
+    flatten_dims,
+    unflatten_first_dim,
+    small_deconvnet,
+)
+
 
 class FeatureExtractorMLP(object):
-    def __init__(self, policy, features_shared_with_policy, feat_dim=None, layernormalize=None,
-                 scope='feature_extractor', use_oh=True):
+    def __init__(
+        self,
+        policy,
+        features_shared_with_policy,
+        feat_dim=None,
+        layernormalize=None,
+        scope="feature_extractor",
+        use_oh=True,
+    ):
         self.scope = scope
         self.features_shared_with_policy = features_shared_with_policy
         self.feat_dim = feat_dim
@@ -23,8 +37,16 @@ class FeatureExtractorMLP(object):
         if features_shared_with_policy:
             self.features_model = None
         else:
-            self.features_model = small_mlp(self.ob_space, nl=torch.nn.LeakyReLU, feat_dim=self.feat_dim, last_nl=None, layernormalize=self.layernormalize)
-            self.param_list = self.param_list + [dict(params=self.features_model.parameters())]
+            self.features_model = small_mlp(
+                self.ob_space,
+                nl=torch.nn.LeakyReLU,
+                feat_dim=self.feat_dim,
+                last_nl=None,
+                layernormalize=self.layernormalize,
+            )
+            self.param_list = self.param_list + [
+                dict(params=self.features_model.parameters())
+            ]
 
         self.scope = scope
 
@@ -36,23 +58,30 @@ class FeatureExtractorMLP(object):
 
     def update_features(self, obs, last_obs):
         if self.features_shared_with_policy:
-            self.features = self.policy.flat_features
+            # original implementation
+            # self.features = self.policy.flat_features
+            self.features = self.policy.get_features(obs)
             last_features = self.policy.get_features(last_obs)
         else:
             self.features = self.get_features(obs)
             last_features = self.get_features(last_obs)
-        self.next_features = torch.cat([self.features[:, 1:], last_features], 1)
+        self.next_features = torch.cat(
+            [self.features[:, 1:, :], last_features], 1
+        )
         self.ac = self.policy.ac
         self.ob = self.policy.ob
 
     def get_features(self, x):
-        x_has_timesteps = (len(x.shape) == 2)
+        # Should not be used.
+        raise NotImplementedError
+        x_has_timesteps = len(x.shape) == 2
+
         if x_has_timesteps:
             sh = x.shape
-            x = flatten_dims(x, len(self.ob_space.shape))
+            x = flatten_two_dims(x)
         # x = np.transpose(x, [i for i in range(len(x.shape)-3)] + [-1, -3, -2]) # transpose channel axis
         if self.use_oh:
-            x = torch.tensor(x)#.float()
+            x = torch.tensor(x)  # .float()
             # print(x)
             # print(self.ob_space.n)
             x = F.one_hot(x, num_classes=self.ob_space.n)
@@ -68,9 +97,16 @@ class FeatureExtractorMLP(object):
     def get_loss(self, *arg, **kwarg):
         return torch.tensor(0.0)
 
+
 class FeatureExtractor(object):
-    def __init__(self, policy, features_shared_with_policy, feat_dim=None, layernormalize=None,
-                 scope='feature_extractor'):
+    def __init__(
+        self,
+        policy,
+        features_shared_with_policy,
+        feat_dim=None,
+        layernormalize=None,
+        scope="feature_extractor",
+    ):
         self.scope = scope
         self.features_shared_with_policy = features_shared_with_policy
         self.feat_dim = feat_dim
@@ -87,8 +123,16 @@ class FeatureExtractor(object):
         if features_shared_with_policy:
             self.features_model = None
         else:
-            self.features_model = small_convnet(self.ob_space, nl=torch.nn.LeakyReLU, feat_dim=self.feat_dim, last_nl=None, layernormalize=self.layernormalize)
-            self.param_list = self.param_list + [dict(params=self.features_model.parameters())]
+            self.features_model = small_convnet(
+                self.ob_space,
+                nl=torch.nn.LeakyReLU,
+                feat_dim=self.feat_dim,
+                last_nl=None,
+                layernormalize=self.layernormalize,
+            )
+            self.param_list = self.param_list + [
+                dict(params=self.features_model.parameters())
+            ]
 
         self.scope = scope
 
@@ -104,17 +148,21 @@ class FeatureExtractor(object):
         else:
             self.features = self.get_features(obs)
             last_features = self.get_features(last_obs)
-        self.next_features = torch.cat([self.features[:, 1:], last_features], 1)
+        self.next_features = torch.cat(
+            [self.features[:, 1:], last_features], 1
+        )
         self.ac = self.policy.ac
         self.ob = self.policy.ob
 
     def get_features(self, x):
-        x_has_timesteps = (len(x.shape) == 5)
+        x_has_timesteps = len(x.shape) == 5
         if x_has_timesteps:
             sh = x.shape
             x = flatten_dims(x, len(self.ob_space.shape))
         x = (x - self.ob_mean) / self.ob_std
-        x = np.transpose(x, [i for i in range(len(x.shape)-3)] + [-1, -3, -2]) # transpose channel axis
+        x = np.transpose(
+            x, [i for i in range(len(x.shape) - 3)] + [-1, -3, -2]
+        )  # transpose channel axis
         x = self.features_model(torch.tensor(x))
         if x_has_timesteps:
             x = unflatten_first_dim(x, sh)
@@ -125,15 +173,26 @@ class FeatureExtractor(object):
 
 
 class InverseDynamics(FeatureExtractor):
-    def __init__(self, policy, features_shared_with_policy, feat_dim=None, layernormalize=None):
-        super(InverseDynamics, self).__init__(scope="inverse_dynamics", policy=policy,
-                                              features_shared_with_policy=features_shared_with_policy,
-                                              feat_dim=feat_dim, layernormalize=layernormalize)
+    def __init__(
+        self,
+        policy,
+        features_shared_with_policy,
+        feat_dim=None,
+        layernormalize=None,
+    ):
+        super(InverseDynamics, self).__init__(
+            scope="inverse_dynamics",
+            policy=policy,
+            features_shared_with_policy=features_shared_with_policy,
+            feat_dim=feat_dim,
+            layernormalize=layernormalize,
+        )
 
-        self.fc = torch.nn.Sequential(torch.nn.Linear(self.feat_dim * 2, self.policy.hidsize),
-                                   torch.nn.ReLU(),
-                                   torch.nn.Linear(self.policy.hidsize, self.ac_space.n)
-                                  )
+        self.fc = torch.nn.Sequential(
+            torch.nn.Linear(self.feat_dim * 2, self.policy.hidsize),
+            torch.nn.ReLU(),
+            torch.nn.Linear(self.policy.hidsize, self.ac_space.n),
+        )
         self.param_list = self.param_list + [dict(params=self.fc.parameters())]
         self.init_weight()
 
@@ -154,23 +213,53 @@ class InverseDynamics(FeatureExtractor):
 
 
 class VAE(FeatureExtractor):
-    def __init__(self, policy, features_shared_with_policy, feat_dim=None, layernormalize=False, spherical_obs=False):
-        assert not layernormalize, "VAE features should already have reasonable size, no need to layer normalize them"
-        super(VAE, self).__init__(scope="vae", policy=policy,
-                                  features_shared_with_policy=features_shared_with_policy,
-                                  feat_dim=feat_dim, layernormalize=False)
+    def __init__(
+        self,
+        policy,
+        features_shared_with_policy,
+        feat_dim=None,
+        layernormalize=False,
+        spherical_obs=False,
+    ):
+        assert (
+            not layernormalize
+        ), "VAE features should already have reasonable size, no need to layer normalize them"
+        super(VAE, self).__init__(
+            scope="vae",
+            policy=policy,
+            features_shared_with_policy=features_shared_with_policy,
+            feat_dim=feat_dim,
+            layernormalize=False,
+        )
 
-        self.features_model = small_convnet(self.ob_space, nl=torch.nn.LeakyReLU, feat_dim=2 * self.feat_dim, last_nl=None, layernormalize=False)
-        self.decoder_model = small_deconvnet(self.ob_space, feat_dim=self.feat_dim, nl=torch.nn.LeakyReLU, ch = 4 if spherical_obs else 8, positional_bias=True)
+        self.features_model = small_convnet(
+            self.ob_space,
+            nl=torch.nn.LeakyReLU,
+            feat_dim=2 * self.feat_dim,
+            last_nl=None,
+            layernormalize=False,
+        )
+        self.decoder_model = small_deconvnet(
+            self.ob_space,
+            feat_dim=self.feat_dim,
+            nl=torch.nn.LeakyReLU,
+            ch=4 if spherical_obs else 8,
+            positional_bias=True,
+        )
 
-        self.param_list = [dict(params=self.features_model.parameters()), dict(params=self.decoder_model.parameters())]
+        self.param_list = [
+            dict(params=self.features_model.parameters()),
+            dict(params=self.decoder_model.parameters()),
+        ]
 
         self.features_std = None
         self.next_features_std = None
 
         self.spherical_obs = spherical_obs
         if self.spherical_obs:
-            self.scale = torch.nn.Parameter(torch.tensor(1.0), requires_grad=True)
+            self.scale = torch.nn.Parameter(
+                torch.tensor(1.0), requires_grad=True
+            )
             self.param_list = self.param_list + [dict(params=[self.scale])]
 
     def update_features(self, obs, last_obs):
@@ -178,55 +267,74 @@ class VAE(FeatureExtractor):
         last_features = self.get_features(last_obs)
         next_features = torch.cat([features[:, 1:], last_features], 1)
 
-        self.features, self.features_std= torch.split(features, [self.feat_dim, self.feat_dim], -1) # use means only for features exposed to dynamics
-        self.next_features, self.next_features_std = torch.split(next_features, [self.feat_dim, self.feat_dim], -1)
+        self.features, self.features_std = torch.split(
+            features, [self.feat_dim, self.feat_dim], -1
+        )  # use means only for features exposed to dynamics
+        self.next_features, self.next_features_std = torch.split(
+            next_features, [self.feat_dim, self.feat_dim], -1
+        )
         self.ac = self.policy.ac
         self.ob = self.policy.ob
 
-#    def get_features(self, x):
-#        nl = tf.nn.leaky_relu
-#        x_has_timesteps = (x.get_shape().ndims == 5)
-#        if x_has_timesteps:
-#            sh = tf.shape(x)
-#            x = flatten_two_dims(x)
-#        with tf.variable_scope(self.scope + "_features", reuse=reuse):
-#            x = (tf.to_float(x) - self.ob_mean) / self.ob_std
-#            x = small_convnet(x, nl=nl, feat_dim=2 * self.feat_dim, last_nl=None, layernormalize=False)
-#        if x_has_timesteps:
-#            x = unflatten_first_dim(x, sh)
-#        return x
+    #    def get_features(self, x):
+    #        nl = tf.nn.leaky_relu
+    #        x_has_timesteps = (x.get_shape().ndims == 5)
+    #        if x_has_timesteps:
+    #            sh = tf.shape(x)
+    #            x = flatten_two_dims(x)
+    #        with tf.variable_scope(self.scope + "_features", reuse=reuse):
+    #            x = (tf.to_float(x) - self.ob_mean) / self.ob_std
+    #            x = small_convnet(x, nl=nl, feat_dim=2 * self.feat_dim, last_nl=None, layernormalize=False)
+    #        if x_has_timesteps:
+    #            x = unflatten_first_dim(x, sh)
+    #        return x
 
     def get_loss(self):
         posterior_mean = self.features
-        posterior_scale = torch.nn.functional.softplus(self.features_std) 
-        posterior_distribution = torch.distributions.normal.Normal(posterior_mean, posterior_scale) 
+        posterior_scale = torch.nn.functional.softplus(self.features_std)
+        posterior_distribution = torch.distributions.normal.Normal(
+            posterior_mean, posterior_scale
+        )
 
         sh = posterior_mean.shape
-        prior = torch.distributions.normal.Normal(torch.zeros(sh), torch.ones(sh)) 
+        prior = torch.distributions.normal.Normal(
+            torch.zeros(sh), torch.ones(sh)
+        )
 
-        posterior_kl = torch.distributions.kl.kl_divergence(posterior_distribution, prior) 
+        posterior_kl = torch.distributions.kl.kl_divergence(
+            posterior_distribution, prior
+        )
 
         posterior_kl = torch.sum(posterior_kl, -1)
         assert len(posterior_kl.shape) == 2
 
-        posterior_sample = posterior_distribution.rsample() # do we need to let the gradient pass through the sample process?
+        posterior_sample = (
+            posterior_distribution.rsample()
+        )  # do we need to let the gradient pass through the sample process?
         reconstruction_distribution = self.decoder(posterior_sample)
         norm_obs = self.add_noise_and_normalize(self.ob)
-        norm_obs = np.transpose(norm_obs, [i for i in range(len(norm_obs.shape) - 3)] + [-1, -3, -2]) # transpose channel axis
-        reconstruction_likelihood = reconstruction_distribution.log_prob(torch.tensor(norm_obs).float())
+        norm_obs = np.transpose(
+            norm_obs,
+            [i for i in range(len(norm_obs.shape) - 3)] + [-1, -3, -2],
+        )  # transpose channel axis
+        reconstruction_likelihood = reconstruction_distribution.log_prob(
+            torch.tensor(norm_obs).float()
+        )
         assert reconstruction_likelihood.shape[-3:] == (4, 84, 84)
-        reconstruction_likelihood = torch.sum(reconstruction_likelihood, [-3, -2, -1])
+        reconstruction_likelihood = torch.sum(
+            reconstruction_likelihood, [-3, -2, -1]
+        )
 
         likelihood_lower_bound = reconstruction_likelihood - posterior_kl
-        return - likelihood_lower_bound
+        return -likelihood_lower_bound
 
     def add_noise_and_normalize(self, x):
-        x = x + np.random.normal(0.0, 1.0, size=x.shape) # no bias
+        x = x + np.random.normal(0.0, 1.0, size=x.shape)  # no bias
         x = (x - self.ob_mean) / self.ob_std
         return x
 
     def decoder(self, z):
-        z_has_timesteps = (len(z.shape) == 3)
+        z_has_timesteps = len(z.shape) == 3
         if z_has_timesteps:
             sh = z.shape
             z = flatten_dims(z, 1)
@@ -244,13 +352,23 @@ class VAE(FeatureExtractor):
 
 
 class JustPixels(FeatureExtractor):
-    def __init__(self, policy, features_shared_with_policy, feat_dim=None, layernormalize=None,
-                 scope='just_pixels'):
+    def __init__(
+        self,
+        policy,
+        features_shared_with_policy,
+        feat_dim=None,
+        layernormalize=None,
+        scope="just_pixels",
+    ):
         assert not layernormalize
         assert not features_shared_with_policy
-        super(JustPixels, self).__init__(scope=scope, policy=policy,
-                                         features_shared_with_policy=False,
-                                         feat_dim=None, layernormalize=None)
+        super(JustPixels, self).__init__(
+            scope=scope,
+            policy=policy,
+            features_shared_with_policy=False,
+            feat_dim=None,
+            layernormalize=None,
+        )
 
     def get_features(self, x, reuse):
         with tf.variable_scope(self.scope + "_features", reuse=reuse):
