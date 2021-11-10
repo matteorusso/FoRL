@@ -226,7 +226,6 @@ class NSIOptimizer(object):
             "loss": 0.0,
             "vfn_loss": 0.0,
             "metric": 0.0,
-            "nsn_pred_loss": 0.0,
             "idn_pg_loss": 0.0,
         }
 
@@ -278,7 +277,6 @@ class NSIOptimizer(object):
                     [features[:, 1:, :], last_features], 1
                 )
 
-                pred_loss_NSN = self.stochpol.get_loss().mean()
                 acs = torch.tensor(flatten_dims(acs, len(self.ac_space.shape)))
                 neglogpac = self.stochpol.pd.neglogp(acs)
                 entropy = torch.mean(self.stochpol.pd.entropy())
@@ -324,9 +322,13 @@ class NSIOptimizer(object):
                     self.stochpol.idn_head.parameters()
                 )
 
-                loss = self.stochpol.get_loss_IDN().mean() * metric.mean()
-                loss += pred_loss_NSN * metric.mean()
-                loss += pg_loss_NSN + ent_loss
+                metric_tensor = torch.tensor(metric)
+                # Have at least 0.1 * pred losses
+                metric_tensor = torch.exp(metric_tensor) - 0.9
+                loss = torch.mean(self.stochpol.get_loss_IDN() * metric_tensor)
+                loss += torch.mean(self.stochpol.get_loss() * metric_tensor)
+                loss += pg_loss_NSN
+                loss += ent_loss
                 self.optimizer_NSN.zero_grad()
                 self.optimizer_IDN.zero_grad()
                 loss.backward()
@@ -347,9 +349,6 @@ class NSIOptimizer(object):
                     self.nminibatches * self.nepochs
                 )
                 to_report["metric"] += np.mean(metric) / (
-                    self.nminibatches * self.nepochs
-                )
-                to_report["nsn_pred_loss"] += pred_loss_NSN.data.numpy() / (
                     self.nminibatches * self.nepochs
                 )
 
