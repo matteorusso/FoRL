@@ -18,7 +18,8 @@ from auxiliary_tasks import (
 )
 from cnn_policy import CnnPolicy
 from mlp_policy import MLPPolicy
-from cppo_agent import PpoOptimizer
+from nsi_policy import NSIPolicyMLP
+from cppo_agent import PpoOptimizer, NSIOptimizer
 from dynamics import Dynamics, UNet
 from utils import random_agent_ob_mean_std
 from wrappers import (
@@ -58,9 +59,10 @@ class Trainer(object):
         self.num_timesteps = num_timesteps
         self._set_env_vars()
 
+        # NSI agent
         if hps["use_NSI"]:
 
-            self.policy = NSIPolicy(
+            self.policy = NSIPolicyMLP(
                 ob_space=self.ob_space,
                 ac_space=self.ac_space,
                 hidsize=8,
@@ -71,6 +73,8 @@ class Trainer(object):
                 nl=torch.nn.LeakyReLU,
             )
 
+            self.policy.is_NSI = True
+
             self.feature_extractor = {
                 "none": FeatureExtractor,
                 "none_mlp": FeatureExtractorMLP,
@@ -79,7 +83,7 @@ class Trainer(object):
             if hps["use_oh"]:
                 self.feature_extractor = self.feature_extractor(
                     policy=self.policy,
-                    features_shared_with_policy=False,
+                    features_shared_with_policy=True,
                     feat_dim=self.ob_space.n,
                     layernormalize=hps["layernorm"],
                     use_oh=hps["use_oh"],
@@ -111,9 +115,9 @@ class Trainer(object):
                 normadv=hps["norm_adv"],
                 ext_coeff=hps["ext_coeff"],
                 int_coeff=hps["int_coeff"],
-                dynamics=self.dynamics,
             )
 
+        # not NSI agent
         else:
             self.policy = MLPPolicy(
                 scope="pol",
@@ -127,6 +131,8 @@ class Trainer(object):
                 nl=torch.nn.LeakyReLU,
                 use_oh=hps["use_oh"],
             )
+
+            self.policy.is_NSI = False
 
             self.feature_extractor = {
                 "none": FeatureExtractor,
@@ -160,31 +166,6 @@ class Trainer(object):
                     feat_dim=512,
                     layernormalize=hps["layernorm"],
                 )
-
-            # self.policy = CnnPolicy(
-            #     scope='pol',
-            #     ob_space=self.ob_space,
-            #     ac_space=self.ac_space,
-            #     hidsize=512,
-            #     feat_dim=512,
-            #     ob_mean=self.ob_mean,
-            #     ob_std=self.ob_std,
-            #     layernormalize=False,
-            #     nl=torch.nn.LeakyReLU)
-
-            # self.feature_extractor = {"none": FeatureExtractor,
-            #                           "idf": InverseDynamics,
-            #                           "vaesph": partial(VAE, spherical_obs=True),
-            #                           "vaenonsph": partial(VAE, spherical_obs=False),
-            #                           "pix2pix": JustPixels}[hps['feat_learning']]
-            # self.feature_extractor = self.feature_extractor(policy=self.policy,
-            #                                                 # if we use VAE, 'features_shared_with_policy' should be set to False,
-            #                                                 # because the shape of output_features of VAE.get_features is feat_dims * 2, including means and stds,
-            #                                                 # but the shape of out_features of policy.get_features is feat_dims,
-            #                                                 # only means is used as features exposed to dynamics
-            #                                                 features_shared_with_policy=False,
-            #                                                 feat_dim=512,
-            #                                                 layernormalize=hps['layernorm'])
 
             self.dynamics = (
                 Dynamics if hps["feat_learning"] != "pix2pix" else UNet
@@ -228,15 +209,20 @@ class Trainer(object):
         ]
 
     def train(self):
-        self.agent.start_interaction(
-            self.envs, nlump=self.hps["nlumps"], dynamics=self.dynamics
-        )
+        if self.hps['use_NSI']:
+            self.agent.start_interaction(
+                self.envs, nlump=self.hps["nlumps"]
+            )
+        else:
+            self.agent.start_interaction(
+                self.envs, nlump=self.hps["nlumps"], dynamics=self.dynamics
+            )
         while True:
             info = self.agent.step()
             if info["update"]:
                 # print('Avg. reward =', info['update']['rew_mean'])
                 logger.logkvs(info["update"])
-                # logger.dumpkvs()
+            logger.dumpkvs()
             if self.agent.rollout.stats["tcount"] > self.num_timesteps:
                 break
 
@@ -306,7 +292,7 @@ def add_optimization_params(parser):
     parser.add_argument("--gamma", type=float, default=0.99)
     parser.add_argument("--nminibatches", type=int, default=4)
     parser.add_argument("--norm_adv", type=int, default=1)
-    parser.add_argument("--norm_rew", type=int, default=1)
+    parser.add_argument("--norm_rew", type=int, default=0)
     parser.add_argument("--lr", type=float, default=1e-4)
     parser.add_argument("--ent_coeff", type=float, default=0.001)
     parser.add_argument("--nepochs", type=int, default=3)
@@ -347,8 +333,8 @@ if __name__ == "__main__":
         default="vaenonsph",
         choices=["none", "none_mlp", "idf", "vaesph", "vaenonsph", "pix2pix"],
     )
-    parser.add_argument("--use_oh", type=int, default=0)
-    parser.add_argument("--use_NSI", type=int, default=0)
+    parser.add_argument("--use_oh", type=int, default=1)
+    parser.add_argument("--use_NSI", type=int, default=1)
 
     args = parser.parse_args()
 

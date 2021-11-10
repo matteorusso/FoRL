@@ -22,9 +22,14 @@ class Rollout(object):
 
         self.reward_fun = lambda ext_rew, int_rew: ext_rew_coeff * np.clip(ext_rew, -1., 1.) + int_rew_coeff * int_rew
 
-        self.buf_vpreds = np.empty((nenvs, self.nsteps), np.float32)
+        if self.policy.is_NSI:
+            self.buf_vpreds = np.empty((nenvs, self.nsteps, 2), np.float32)
+        else:
+            self.buf_vpreds = np.empty((nenvs, self.nsteps), np.float32)
         self.buf_nlps = np.empty((nenvs, self.nsteps), np.float32)
         self.buf_rews = np.empty((nenvs, self.nsteps), np.float32)
+        self.buf_rews_NSN = np.empty((nenvs, self.nsteps), np.float32)
+        self.buf_rews_IDN = np.empty((nenvs, self.nsteps), np.float32)
         self.buf_ext_rews = np.empty((nenvs, self.nsteps), np.float32)
         self.buf_acs = np.empty((nenvs, self.nsteps, *self.ac_space.shape), self.ac_space.dtype)
         self.buf_obs = np.empty((nenvs, self.nsteps, *self.ob_space.shape), self.ob_space.dtype)
@@ -58,10 +63,22 @@ class Rollout(object):
         self.update_info()
 
     def calculate_reward(self):
-        int_rew = self.dynamics.calculate_loss(obs=self.buf_obs,
-                                               last_obs=self.buf_obs_last,
-                                               acs=self.buf_acs)
-        self.buf_rews[:] = self.reward_fun(int_rew=int_rew, ext_rew=self.buf_ext_rews)
+        if self.policy.is_NSI:
+            int_loss_NSN = self.policy.calculate_loss(obs=self.buf_obs,
+                                                   last_obs=self.buf_obs_last,
+                                                   acs=self.buf_acs)
+            # Use predictions instead of buf_obs
+            int_loss_IDN = self.policy.calculate_loss(obs=self.buf_obs,
+                                                   last_obs=self.buf_obs_last,
+                                                   acs=self.buf_acs)
+            self.buf_rews_NSN[:] = self.reward_fun(int_rew=-int_loss_NSN, ext_rew=self.buf_ext_rews)
+            self.buf_rews_IDN[:] = -int_loss_IDN
+            self.metric = self.buf_rews_IDN.copy()
+        else:
+            int_rew = self.dynamics.calculate_loss(obs=self.buf_obs,
+                                                   last_obs=self.buf_obs_last,
+                                                   acs=self.buf_acs)
+            self.buf_rews[:] = self.reward_fun(int_rew=int_rew, ext_rew=self.buf_ext_rews)
 
     def rollout_step(self):
         t = self.step_count % self.nsteps
