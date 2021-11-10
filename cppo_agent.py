@@ -199,6 +199,7 @@ class NSIOptimizer(object):
                 vf_idn_loss = 0.5 * torch.mean((vpred[:, :, 1].squeeze() - torch.tensor(rets_IDN)) ** 2)
                 VFN_loss = vf_nsn_loss + vf_idn_loss
 
+
                 nlps = torch.tensor(flatten_dims(nlps, 0))
                 ratio = torch.exp(nlps - neglogpac.squeeze())
 
@@ -232,7 +233,7 @@ class NSIOptimizer(object):
                 idn_params = list(self.stochpol.idn.parameters()) + list(self.stochpol.idn_head.parameters())
                 IDN_loss = pg_loss_IDN + ent_loss
                 self.optimizer_IDN.zero_grad()
-                IDN_loss.backward(inputs=idn_params) 
+                IDN_loss.backward(inputs=idn_params)
                 self.optimizer_IDN.step()
 
                 self.optimizer_VFN.zero_grad()

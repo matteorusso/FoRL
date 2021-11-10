@@ -64,11 +64,15 @@ class Rollout(object):
 
     def calculate_reward(self):
         if self.policy.is_NSI:
-            int_loss = self.policy.calculate_loss(obs=self.buf_obs,
+            int_loss_NSN = self.policy.calculate_loss(obs=self.buf_obs,
                                                    last_obs=self.buf_obs_last,
                                                    acs=self.buf_acs)
-            self.buf_rews_NSN[:] = self.reward_fun(int_rew=-int_loss, ext_rew=self.buf_ext_rews)
-            self.buf_rews_IDN[:] = -int_loss
+            # Use predictions instead of buf_obs
+            int_loss_IDN = self.policy.calculate_loss(obs=self.buf_obs,
+                                                   last_obs=self.buf_obs_last,
+                                                   acs=self.buf_acs)
+            self.buf_rews_NSN[:] = self.reward_fun(int_rew=-int_loss_NSN, ext_rew=self.buf_ext_rews)
+            self.buf_rews_IDN[:] = -int_loss_IDN
             self.metric = self.buf_rews_IDN.copy()
         else:
             int_rew = self.dynamics.calculate_loss(obs=self.buf_obs,

@@ -222,7 +222,7 @@ class Trainer(object):
             if info["update"]:
                 # print('Avg. reward =', info['update']['rew_mean'])
                 logger.logkvs(info["update"])
-            # logger.dumpkvs()
+            logger.dumpkvs()
             if self.agent.rollout.stats["tcount"] > self.num_timesteps:
                 break
 
