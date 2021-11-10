@@ -323,8 +323,7 @@ class NSIOptimizer(object):
                 )
 
                 metric_tensor = torch.tensor(metric)
-                # Have at least 0.1 * pred losses
-                metric_tensor = torch.exp(metric_tensor) - 0.9
+                metric_tensor = torch.exp(metric_tensor) - 1
                 loss = torch.mean(self.stochpol.get_loss_IDN() * metric_tensor)
                 loss += torch.mean(self.stochpol.get_loss() * metric_tensor)
                 loss += pg_loss_NSN
