@@ -6,15 +6,7 @@ from distributions import make_pdtype
 
 from utils import small_convnet, flatten_dims, unflatten_first_dim, small_mlp
 
-class NSN(nn.Module):
-    def __init__(self, ob_space, ac_space, hidsize,
-                 ob_mean, ob_std, feat_dim, layernormalize, nl, scope="policy"):
-        super().__init__()
-
-    def forward(self, x):
-
-
-class NSIPolicy(object):
+class NSIPolicyMLP(object):
     def __init__(self, ob_space, ac_space, hidsize,
                  ob_mean, ob_std, feat_dim, layernormalize, nl, scope="policy"):
         if layernormalize:
@@ -33,13 +25,17 @@ class NSIPolicy(object):
         self.scope = scope
         pdparamsize = self.ac_pdtype.param_shape()[0]
 
-        self.nsn = small_mlp(self.ob_space, nl=self.nl, feat_dim=self.feat_dim, last_nl=None, layernormalize=self.layernormalize)
-        self.idn = small_mlp(self.ob_space, nl=self.nl, feat_dim=self.feat_dim, last_nl=None, layernormalize=self.layernormalize)
+        self.nsn = small_mlp(self.ob_space, nl=self.nl, hidsize=self.hidsize, last_nl=self.nl, layernormalize=self.layernormalize)
+        self.idn = small_mlp(2*self.ob_space, nl=self.nl, hidsize=self.hidsize, last_nl=self.nl, layernormalize=self.layernormalize)
+        self.vfn = small_mlp(self.ob_space, nl=self.nl, hidsize=self.hidsize, last_nl=self.nl, layernormalize=self.layernormalize)
 
-        self.pd_head = torch.nn.Linear(hidsize, pdparamsize)
-        self.vf_head = torch.nn.Linear(hidsize, 1)
+        self.nsn_head = torch.nn.Linear(hidsize, feat_dim)
+        self.idn_head = torch.nn.Linear(hidsize, pdparamsize)
+        self.vfn_head = torch.nn.Linear(hidsize, 1)
 
-        self.param_list = [dict(params=self.features_model.parameters()), dict(params=self.pd_head.parameters()), dict(params=self.vf_head.parameters())]
+        self.param_list_NSN = [dict(params=self.nsn.parameters()), dict(params=self.nsn_head.parameters())]
+        self.param_list_IDN = [dict(params=self.idn.parameters()), dict(params=self.idn_head.parameters())]
+        self.param_list_VFN = [dict(params=self.vfn.parameters()), dict(params=self.vfn_head.parameters())]
 
         self.flat_features = None
         self.pd = None
@@ -48,31 +44,43 @@ class NSIPolicy(object):
         self.ob = None
 
     def update_features(self, ob, ac):
-        sh = ob.shape # ob.shape = [nenvs, timestep, H, W, C]. Can timestep > 1 ?
-        x = flatten_dims(ob, len(self.ob_space.shape))[:, None] # flat first two dims of ob.shape and get a shape of [N, H, W, C].
-        flat_features = self.get_features(x) # [N, feat_dim]
+        sh = (
+            ob.shape
+        )  # ob.shape = [nenvs, timestep, H, W, C]. Can timestep > 1 ?
+        x = flatten_dims(
+            ob, len(self.ob_space.shape)
+        )  # flat first two dims of ob.shape and get a shape of [N, H, W, C].
+        flat_features = self.get_features(x)  # [N, feat_dim]
         self.flat_features = flat_features
-        hidden = flat_features
-        pdparam = self.pd_head(hidden)
-        vpred = self.vf_head(hidden)
-        self.vpred = unflatten_first_dim(vpred, sh) #[nenvs, tiemstep, v]
-        self.pd = pd = self.ac_pdtype.pdfromflat(pdparam)
+
+        # Next state predicition <-- NSN
+        nsp_logit = self.nsn_head(self.nsn(flat_features)) # to be saved for loss
+        nsp = F.softmax(nsp_logit)
+        # Get current dit. over actions that brought us there <-- IDN
+        ac_distr = self.idn_head(self.idn(torch.cat([nsp, flat_features], dim=-1)))
+        # Get current value function prediction <-- VFN
+        vfp = self.vfn_head(self.vfn(nsp))
+
+        self.nsp_logit = nsp_logit
+        self.vpred = unflatten_first_dim(vfp, sh)  # [nenvs, timestep, v]
+        self.pd = pd = self.ac_pdtype.pdfromflat(ac_distr)
         self.ac = ac
         self.ob = ob
 
-        # compute softmax: F.softmax()
-
-
     def get_features(self, x):
-        x_has_timesteps = (len(x.shape) == 3) # used to be 5
+        x_has_timesteps = len(x.shape) == 2
+
         if x_has_timesteps:
             sh = x.shape
             x = flatten_two_dims(x)
-
-        x = (x - self.ob_mean) / self.ob_std
-        #x = np.transpose(x, [i for i in range(len(x.shape)-3)] + [-1, -3, -2]) # [N, H, W, C] --> [N, C, H, W]
-        x = self.features_model(torch.tensor(x).float())
-
+        if self.use_oh:
+            x = torch.tensor(x).squeeze()
+            x = F.one_hot(x, num_classes=self.ob_space.n).float()
+        else:
+            x = (x - self.ob_mean) / self.ob_std
+            x = x[:, None]
+            x = torch.tensor(x).float()
+            x = self.features_model(x)
         if x_has_timesteps:
             x = unflatten_first_dim(x, sh)
         return x
