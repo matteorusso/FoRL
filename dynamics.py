@@ -99,9 +99,6 @@ class Dynamics(object):
 
         features = self.features
         next_features = self.next_features
-        print(features.shape)
-        print(ac.shape)
-        print(gbhnj)
         assert features.shape[:-1] == ac.shape[:-1]
         sh = features.shape
         x = flatten_dims(features, 1)

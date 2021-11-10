@@ -2,7 +2,7 @@
 import functools
 import os.path as osp
 from functools import partial
-
+import numpy as np
 import gym
 import torch
 import logger
@@ -209,10 +209,8 @@ class Trainer(object):
         ]
 
     def train(self):
-        if self.hps['use_NSI']:
-            self.agent.start_interaction(
-                self.envs, nlump=self.hps["nlumps"]
-            )
+        if self.hps["use_NSI"]:
+            self.agent.start_interaction(self.envs, nlump=self.hps["nlumps"])
         else:
             self.agent.start_interaction(
                 self.envs, nlump=self.hps["nlumps"], dynamics=self.dynamics
@@ -222,7 +220,8 @@ class Trainer(object):
             if info["update"]:
                 # print('Avg. reward =', info['update']['rew_mean'])
                 logger.logkvs(info["update"])
-            logger.dumpkvs()
+            if np.random.rand() > 0.99:
+                logger.dumpkvs()
             if self.agent.rollout.stats["tcount"] > self.num_timesteps:
                 break
 

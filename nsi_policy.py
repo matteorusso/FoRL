@@ -4,13 +4,32 @@ from torch import nn
 import torch.nn.functional as F
 from distributions import make_pdtype
 
-from utils import small_convnet, flatten_dims, unflatten_first_dim, flatten_two_dims, small_mlp
+from utils import (
+    small_convnet,
+    flatten_dims,
+    unflatten_first_dim,
+    flatten_two_dims,
+    small_mlp,
+)
+
 
 class NSIPolicyMLP(object):
-    def __init__(self, ob_space, ac_space, hidsize,
-                 ob_mean, ob_std, feat_dim, layernormalize, nl, scope="policy"):
+    def __init__(
+        self,
+        ob_space,
+        ac_space,
+        hidsize,
+        ob_mean,
+        ob_std,
+        feat_dim,
+        layernormalize,
+        nl,
+        scope="policy",
+    ):
         if layernormalize:
-            print("Warning: policy is operating on top of layer-normed features. It might slow down the training.")
+            print(
+                "Warning: policy is operating on top of layer-normed features. It might slow down the training."
+            )
         self.layernormalize = layernormalize
         self.nl = nl
         self.ob_mean = ob_mean
@@ -25,17 +44,44 @@ class NSIPolicyMLP(object):
         self.scope = scope
         pdparamsize = self.ac_pdtype.param_shape()[0]
 
-        self.nsn = small_mlp(self.ob_space.n, nl=self.nl, hidsize=self.hidsize, last_nl=F.leaky_relu, layernormalize=self.layernormalize)
-        self.idn = small_mlp(2*self.ob_space.n, nl=self.nl, hidsize=self.hidsize, last_nl=F.leaky_relu, layernormalize=self.layernormalize)
-        self.vfn = small_mlp(self.ob_space.n, nl=self.nl, hidsize=self.hidsize, last_nl=F.leaky_relu, layernormalize=self.layernormalize)
+        self.nsn = small_mlp(
+            self.ob_space.n,
+            nl=self.nl,
+            hidsize=self.hidsize,
+            last_nl=F.leaky_relu,
+            layernormalize=self.layernormalize,
+        )
+        self.idn = small_mlp(
+            2 * self.ob_space.n,
+            nl=self.nl,
+            hidsize=self.hidsize,
+            last_nl=F.leaky_relu,
+            layernormalize=self.layernormalize,
+        )
+        self.vfn = small_mlp(
+            self.ob_space.n,
+            nl=self.nl,
+            hidsize=self.hidsize,
+            last_nl=F.leaky_relu,
+            layernormalize=self.layernormalize,
+        )
 
         self.nsn_head = torch.nn.Linear(hidsize, feat_dim)
         self.idn_head = torch.nn.Linear(hidsize, pdparamsize)
         self.vfn_head = torch.nn.Linear(hidsize, 2)
 
-        self.param_list_NSN = [dict(params=self.nsn.parameters()), dict(params=self.nsn_head.parameters())]
-        self.param_list_IDN = [dict(params=self.idn.parameters()), dict(params=self.idn_head.parameters())]
-        self.param_list_VFN = [dict(params=self.vfn.parameters()), dict(params=self.vfn_head.parameters())]
+        self.param_list_NSN = [
+            dict(params=self.nsn.parameters()),
+            dict(params=self.nsn_head.parameters()),
+        ]
+        self.param_list_IDN = [
+            dict(params=self.idn.parameters()),
+            dict(params=self.idn_head.parameters()),
+        ]
+        self.param_list_VFN = [
+            dict(params=self.vfn.parameters()),
+            dict(params=self.vfn_head.parameters()),
+        ]
 
         self.flat_features = None
         self.pd = None
@@ -56,10 +102,14 @@ class NSIPolicyMLP(object):
         self.flat_features = flat_features
 
         # Next state predicition <-- NSN
-        nsp_logit = self.nsn_head(self.nsn(flat_features)) # to be saved for loss
+        nsp_logit = self.nsn_head(
+            self.nsn(flat_features)
+        )  # to be saved for loss
         nsp = F.softmax(nsp_logit, dim=-1)
-        # Get current dit. over actions that brought us there <-- IDN
-        ac_distr = self.idn_head(self.idn(torch.cat([nsp, flat_features], dim=-1)))
+        # Get current dist. over actions that brought us there <-- IDN
+        ac_distr = self.idn_head(
+            self.idn(torch.cat([nsp, flat_features], dim=-1))
+        )
         # Get current value function prediction <-- VFN
         vfp = self.vfn_head(self.vfn(flat_features))
 
@@ -100,11 +150,27 @@ class NSIPolicyMLP(object):
         next_features = self.next_features
         assert features.shape[:-1] == ac.shape[:-1]
         sh = features.shape
+
         x = unflatten_first_dim(self.nsp_logit, sh)
 
-        # Implement KL or JS
-        ce = F.cross_entropy(x, torch.argmax(next_features, dim=-1), reduction="none")
-        return ce
+        # if np.random.rand() > 0.999:
+        #     print("test")
+        #     print(next_features[0, 0, :].reshape(4, 4))
+        #     print(F.softmax(x, dim=-1)[0, 0, :].reshape(4, 4))
+        #     print(next_features[0, 1, :].reshape(4, 4))
+        #     print(F.softmax(x, dim=-1)[0, 1, :].reshape(4, 4))
+        #     print(next_features[0, 2, :].reshape(4, 4))
+        #     print(F.softmax(x, dim=-1)[0, 2, :].reshape(4, 4))
+        #     print(next_features[0, 3, :].reshape(4, 4))
+        #     print(F.softmax(x, dim=-1)[0, 3, :].reshape(4, 4))
+        sh = x.shape
+        ce = F.cross_entropy(
+            flatten_dims(x, 1),
+            torch.argmax(flatten_dims(next_features, 1), dim=-1),
+            reduction="none",
+        )
+        # ce = torch.sum((F.softmax(x, dim=-1) - next_features) ** 2, dim=-1)
+        return ce.reshape(sh[:-1])
 
     def calculate_loss(self, obs, last_obs, acs):
         n_chunks = 4
@@ -120,11 +186,13 @@ class NSIPolicyMLP(object):
             self.update_features(ob, ac)
             features = self.get_features(ob)
             self.features = features
+
             last_features = self.get_features(last_ob)
 
             self.next_features = torch.cat(
                 [features[:, 1:, :], last_features], 1
             )
+
             loss = self.get_loss()
             if losses is None:
                 losses = loss
@@ -133,8 +201,12 @@ class NSIPolicyMLP(object):
         return losses.data.numpy()
 
     def get_ac_value_nlp(self, ob):
-        self.update_features(ob, None) 
+        self.update_features(ob, None)
         a_samp = self.pd.sample()
         entropy = self.pd.entropy()
         nlp_samp = self.pd.neglogp(a_samp)
-        return a_samp.squeeze().data.numpy(), self.vpred.squeeze().data.numpy(), nlp_samp.squeeze().data.numpy()
+        return (
+            a_samp.squeeze().data.numpy(),
+            self.vpred.squeeze().data.numpy(),
+            nlp_samp.squeeze().data.numpy(),
+        )
