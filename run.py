@@ -73,6 +73,8 @@ class Trainer(object):
                 nl=torch.nn.LeakyReLU,
             )
 
+            self.policy.is_NSI = True
+
             self.feature_extractor = {
                 "none": FeatureExtractor,
                 "none_mlp": FeatureExtractorMLP,
@@ -113,7 +115,6 @@ class Trainer(object):
                 normadv=hps["norm_adv"],
                 ext_coeff=hps["ext_coeff"],
                 int_coeff=hps["int_coeff"],
-                dynamics=self.dynamics,
             )
 
         # not NSI agent
@@ -130,6 +131,8 @@ class Trainer(object):
                 nl=torch.nn.LeakyReLU,
                 use_oh=hps["use_oh"],
             )
+
+            self.policy.is_NSI = False
 
             self.feature_extractor = {
                 "none": FeatureExtractor,
@@ -206,17 +209,18 @@ class Trainer(object):
         ]
 
     def train(self):
-        self.agent.start_interaction(
-            self.envs, nlump=self.hps["nlumps"], dynamics=self.dynamics
-        )
+        if self.hps['use_NSI']:
+            self.agent.start_interaction(
+                self.envs, nlump=self.hps["nlumps"]
+            )
         while True:
             info = self.agent.step()
             if info["update"]:
                 # print('Avg. reward =', info['update']['rew_mean'])
                 logger.logkvs(info["update"])
-                # logger.dumpkvs()
-            if self.agent.rollout.stats["tcount"] > self.num_timesteps:
-                break
+            # logger.dumpkvs()
+        if self.agent.rollout.stats["tcount"] > self.num_timesteps:
+            break
 
         self.agent.stop_interaction()
 

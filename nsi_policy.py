@@ -31,7 +31,7 @@ class NSIPolicyMLP(object):
 
         self.nsn_head = torch.nn.Linear(hidsize, feat_dim)
         self.idn_head = torch.nn.Linear(hidsize, pdparamsize)
-        self.vfn_head = torch.nn.Linear(hidsize, 1)
+        self.vfn_head = torch.nn.Linear(hidsize, 2)
 
         self.param_list_NSN = [dict(params=self.nsn.parameters()), dict(params=self.nsn_head.parameters())]
         self.param_list_IDN = [dict(params=self.idn.parameters()), dict(params=self.idn_head.parameters())]
@@ -84,6 +84,49 @@ class NSIPolicyMLP(object):
         if x_has_timesteps:
             x = unflatten_first_dim(x, sh)
         return x
+
+    def get_loss(self):
+        ac = self.ac
+        sh = ac.shape
+        ac = flatten_dims(ac, len(self.ac_space.shape))
+        ac = torch.zeros(ac.shape + (self.ac_space.n,)).scatter_(
+            1, torch.tensor(ac).unsqueeze(1), 1
+        )  # one_hot(self.ac, self.ac_space.n, axis=2)
+        ac = unflatten_first_dim(ac, sh)
+
+        features = self.features
+        next_features = self.next_features
+        assert features.shape[:-1] == ac.shape[:-1]
+        sh = features.shape
+        x = unflatten_first_dim(self.nsp_logit, sh)
+
+        # Implement KL or JS
+        return torch.sum(F.cross_entropy(x, next_features, reduction="none"), dim=-1)
+
+    def calculate_loss(self, obs, last_obs, acs):
+        n_chunks = 4
+        n = obs.shape[0]
+        chunk_size = n // n_chunks
+        assert n % n_chunks == 0
+        sli = lambda i: slice(i * chunk_size, (i + 1) * chunk_size)
+        losses = None
+        for i in range(n_chunks):
+            ob = obs[sli(i)]
+            last_ob = last_obs[sli(i)]
+            ac = acs[sli(i)]
+            self.update_features(ob, ac)
+            features = self.get_features(obs)
+            last_features = self.get_features(last_obs)
+
+            self.next_features = torch.cat(
+                [features[:, 1:, :], last_features], 1
+            )
+            loss = self.get_loss()
+            if losses is None:
+                losses = loss
+            else:
+                losses = torch.cat((losses, loss), 0)
+        return losses.data.numpy()
 
     def get_ac_value_nlp(self, ob):
         self.update_features(ob, None) 

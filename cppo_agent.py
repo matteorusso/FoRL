@@ -40,10 +40,15 @@ class NSIOptimizer(object):
         self.ext_coeff = ext_coeff
         self.int_coeff = int_coeff
 
-    def start_interaction(self, env_fns, dynamics, nlump=2):
-        param_list = self.stochpol.param_list + self.dynamics.param_list + self.dynamics.auxiliary_task.param_list # copy a link, not deepcopy.
-        self.optimizer = torch.optim.Adam(param_list, lr=self.lr)
-        self.optimizer.zero_grad()
+    def start_interaction(self, env_fns, nlump=2):
+        self.optimizer_NSN = torch.optim.Adam(self.stochpol.param_list_NSN, lr=self.lr)
+        self.optimizer_NSN.zero_grad()
+
+        self.optimizer_IDN = torch.optim.Adam(self.stochpol.param_list_IDN, lr=self.lr)
+        self.optimizer_IDN.zero_grad()
+
+        self.optimizer_VFN = torch.optim.Adam(self.stochpol.param_list_VFN, lr=self.lr)
+        self.optimizer_VFN.zero_grad()
 
         self.all_visited_rooms = []
         self.all_scores = []
@@ -60,7 +65,7 @@ class NSIOptimizer(object):
                                int_rew_coeff=self.int_coeff,
                                ext_rew_coeff=self.ext_coeff,
                                record_rollouts=self.use_recorder,
-                               dynamics=dynamics)
+                               dynamics=None)
 
         self.buf_advs = np.zeros((nenvs, self.rollout.nsteps), np.float32)
         self.buf_rets = np.zeros((nenvs, self.rollout.nsteps), np.float32)
