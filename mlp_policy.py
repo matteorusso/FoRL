@@ -44,13 +44,7 @@ class MLPPolicy(object):
         self.scope = scope
         pdparamsize = self.ac_pdtype.param_shape()[0]
 
-        self.features_model = small_mlp(
-            self.ob_space,
-            nl=self.nl,
-            feat_dim=self.feat_dim,
-            last_nl=None,
-            layernormalize=self.layernormalize,
-        )
+        self.features_model = small_mlp(self.ob_space.n, nl=self.nl, hidsize=self.hidsize, last_nl=F.leaky_relu, layernormalize=self.layernormalize)
 
         self.pd_hidden = torch.nn.Sequential(
             torch.nn.Linear(feat_dim, hidsize),

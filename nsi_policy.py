@@ -4,7 +4,7 @@ from torch import nn
 import torch.nn.functional as F
 from distributions import make_pdtype
 
-from utils import small_convnet, flatten_dims, unflatten_first_dim, small_mlp
+from utils import small_convnet, flatten_dims, unflatten_first_dim, flatten_two_dims, small_mlp
 
 class NSIPolicyMLP(object):
     def __init__(self, ob_space, ac_space, hidsize,
@@ -25,9 +25,9 @@ class NSIPolicyMLP(object):
         self.scope = scope
         pdparamsize = self.ac_pdtype.param_shape()[0]
 
-        self.nsn = small_mlp(self.ob_space, nl=self.nl, hidsize=self.hidsize, last_nl=self.nl, layernormalize=self.layernormalize)
-        self.idn = small_mlp(2*self.ob_space, nl=self.nl, hidsize=self.hidsize, last_nl=self.nl, layernormalize=self.layernormalize)
-        self.vfn = small_mlp(self.ob_space, nl=self.nl, hidsize=self.hidsize, last_nl=self.nl, layernormalize=self.layernormalize)
+        self.nsn = small_mlp(self.ob_space.n, nl=self.nl, hidsize=self.hidsize, last_nl=F.leaky_relu, layernormalize=self.layernormalize)
+        self.idn = small_mlp(2*self.ob_space.n, nl=self.nl, hidsize=self.hidsize, last_nl=F.leaky_relu, layernormalize=self.layernormalize)
+        self.vfn = small_mlp(self.ob_space.n, nl=self.nl, hidsize=self.hidsize, last_nl=F.leaky_relu, layernormalize=self.layernormalize)
 
         self.nsn_head = torch.nn.Linear(hidsize, feat_dim)
         self.idn_head = torch.nn.Linear(hidsize, pdparamsize)
@@ -43,6 +43,8 @@ class NSIPolicyMLP(object):
         self.ac = None
         self.ob = None
 
+        self.use_oh = True
+
     def update_features(self, ob, ac):
         sh = (
             ob.shape
@@ -55,11 +57,11 @@ class NSIPolicyMLP(object):
 
         # Next state predicition <-- NSN
         nsp_logit = self.nsn_head(self.nsn(flat_features)) # to be saved for loss
-        nsp = F.softmax(nsp_logit)
+        nsp = F.softmax(nsp_logit, dim=-1)
         # Get current dit. over actions that brought us there <-- IDN
         ac_distr = self.idn_head(self.idn(torch.cat([nsp, flat_features], dim=-1)))
         # Get current value function prediction <-- VFN
-        vfp = self.vfn_head(self.vfn(nsp))
+        vfp = self.vfn_head(self.vfn(flat_features))
 
         self.nsp_logit = nsp_logit
         self.vpred = unflatten_first_dim(vfp, sh)  # [nenvs, timestep, v]
@@ -94,14 +96,15 @@ class NSIPolicyMLP(object):
         )  # one_hot(self.ac, self.ac_space.n, axis=2)
         ac = unflatten_first_dim(ac, sh)
 
-        features = self.features
+        features = self.features.detach()
         next_features = self.next_features
         assert features.shape[:-1] == ac.shape[:-1]
         sh = features.shape
         x = unflatten_first_dim(self.nsp_logit, sh)
 
         # Implement KL or JS
-        return torch.sum(F.cross_entropy(x, next_features, reduction="none"), dim=-1)
+        ce = F.cross_entropy(x, torch.argmax(next_features, dim=-1), reduction="none")
+        return ce
 
     def calculate_loss(self, obs, last_obs, acs):
         n_chunks = 4
@@ -115,8 +118,9 @@ class NSIPolicyMLP(object):
             last_ob = last_obs[sli(i)]
             ac = acs[sli(i)]
             self.update_features(ob, ac)
-            features = self.get_features(obs)
-            last_features = self.get_features(last_obs)
+            features = self.get_features(ob)
+            self.features = features
+            last_features = self.get_features(last_ob)
 
             self.next_features = torch.cat(
                 [features[:, 1:, :], last_features], 1

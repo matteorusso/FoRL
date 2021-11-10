@@ -19,7 +19,7 @@ from auxiliary_tasks import (
 from cnn_policy import CnnPolicy
 from mlp_policy import MLPPolicy
 from nsi_policy import NSIPolicyMLP
-from cppo_agent import PpoOptimizer
+from cppo_agent import PpoOptimizer, NSIOptimizer
 from dynamics import Dynamics, UNet
 from utils import random_agent_ob_mean_std
 from wrappers import (
@@ -213,14 +213,18 @@ class Trainer(object):
             self.agent.start_interaction(
                 self.envs, nlump=self.hps["nlumps"]
             )
+        else:
+            self.agent.start_interaction(
+                self.envs, nlump=self.hps["nlumps"], dynamics=self.dynamics
+            )
         while True:
             info = self.agent.step()
             if info["update"]:
                 # print('Avg. reward =', info['update']['rew_mean'])
                 logger.logkvs(info["update"])
             # logger.dumpkvs()
-        if self.agent.rollout.stats["tcount"] > self.num_timesteps:
-            break
+            if self.agent.rollout.stats["tcount"] > self.num_timesteps:
+                break
 
         self.agent.stop_interaction()
 
@@ -288,7 +292,7 @@ def add_optimization_params(parser):
     parser.add_argument("--gamma", type=float, default=0.99)
     parser.add_argument("--nminibatches", type=int, default=4)
     parser.add_argument("--norm_adv", type=int, default=1)
-    parser.add_argument("--norm_rew", type=int, default=1)
+    parser.add_argument("--norm_rew", type=int, default=0)
     parser.add_argument("--lr", type=float, default=1e-4)
     parser.add_argument("--ent_coeff", type=float, default=0.001)
     parser.add_argument("--nepochs", type=int, default=3)
@@ -329,8 +333,8 @@ if __name__ == "__main__":
         default="vaenonsph",
         choices=["none", "none_mlp", "idf", "vaesph", "vaenonsph", "pix2pix"],
     )
-    parser.add_argument("--use_oh", type=int, default=0)
-    parser.add_argument("--use_NSI", type=int, default=0)
+    parser.add_argument("--use_oh", type=int, default=1)
+    parser.add_argument("--use_NSI", type=int, default=1)
 
     args = parser.parse_args()
 

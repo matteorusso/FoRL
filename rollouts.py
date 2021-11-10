@@ -22,7 +22,10 @@ class Rollout(object):
 
         self.reward_fun = lambda ext_rew, int_rew: ext_rew_coeff * np.clip(ext_rew, -1., 1.) + int_rew_coeff * int_rew
 
-        self.buf_vpreds = np.empty((nenvs, self.nsteps), np.float32)
+        if self.policy.is_NSI:
+            self.buf_vpreds = np.empty((nenvs, self.nsteps, 2), np.float32)
+        else:
+            self.buf_vpreds = np.empty((nenvs, self.nsteps), np.float32)
         self.buf_nlps = np.empty((nenvs, self.nsteps), np.float32)
         self.buf_rews = np.empty((nenvs, self.nsteps), np.float32)
         self.buf_rews_NSN = np.empty((nenvs, self.nsteps), np.float32)
@@ -61,11 +64,12 @@ class Rollout(object):
 
     def calculate_reward(self):
         if self.policy.is_NSI:
-            int_loss = self.stochpol.calculate_loss(obs=self.buf_obs,
+            int_loss = self.policy.calculate_loss(obs=self.buf_obs,
                                                    last_obs=self.buf_obs_last,
                                                    acs=self.buf_acs)
             self.buf_rews_NSN[:] = self.reward_fun(int_rew=-int_loss, ext_rew=self.buf_ext_rews)
             self.buf_rews_IDN[:] = -int_loss
+            self.metric = self.buf_rews_IDN.copy()
         else:
             int_rew = self.dynamics.calculate_loss(obs=self.buf_obs,
                                                    last_obs=self.buf_obs_last,
