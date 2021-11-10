@@ -223,8 +223,7 @@ class NSIOptimizer(object):
             info["best_ext_ret"] = self.rollout.best_ext_ret
 
         to_report = {
-            "nsn_loss": 0.0,
-            "idn_loss": 0.0,
+            "loss": 0.0,
             "vfn_loss": 0.0,
             "metric": 0.0,
             "nsn_pred_loss": 0.0,
@@ -321,32 +320,24 @@ class NSIOptimizer(object):
 
                 approxkl = 0.5 * torch.mean((neglogpac - nlps) ** 2)
 
-                NSN_loss = pg_loss_NSN + pred_loss_NSN
-                # NSN_loss = pred_loss_NSN
-                # NSN_loss = pg_loss_NSN
-                self.optimizer_NSN.zero_grad()
-                NSN_loss.backward(
-                    retain_graph=True
-                )  # otherwise we cannot compute gradients for IDN
-                self.optimizer_NSN.step()
-
                 idn_params = list(self.stochpol.idn.parameters()) + list(
                     self.stochpol.idn_head.parameters()
                 )
-                IDN_loss = pg_loss_IDN + ent_loss
-                # IDN_loss = pg_loss_NSN
+
+                loss = self.stochpol.get_loss_IDN().mean() * metric.mean()
+                loss += pred_loss_NSN * metric.mean()
+                loss += pg_loss_NSN + ent_loss
+                self.optimizer_NSN.zero_grad()
                 self.optimizer_IDN.zero_grad()
-                IDN_loss.backward(inputs=idn_params)
+                loss.backward()
                 self.optimizer_IDN.step()
+                self.optimizer_NSN.step()
 
                 self.optimizer_VFN.zero_grad()
                 VFN_loss.backward()
                 self.optimizer_VFN.step()
 
-                to_report["nsn_loss"] += NSN_loss.data.numpy() / (
-                    self.nminibatches * self.nepochs
-                )
-                to_report["idn_loss"] += IDN_loss.data.numpy() / (
+                to_report["loss"] += loss.data.numpy() / (
                     self.nminibatches * self.nepochs
                 )
                 to_report["idn_pg_loss"] += pg_loss_IDN.data.numpy() / (

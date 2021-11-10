@@ -137,6 +137,52 @@ class NSIPolicyMLP(object):
             x = unflatten_first_dim(x, sh)
         return x
 
+    def get_loss_IDN(self):
+        ac = self.ac
+        sh = ac.shape
+        ac = flatten_dims(ac, len(self.ac_space.shape))
+        ac = torch.zeros(ac.shape + (self.ac_space.n,)).scatter_(
+            1, torch.tensor(ac).unsqueeze(1), 1
+        )  # one_hot(self.ac, self.ac_space.n, axis=2)
+        ac = unflatten_first_dim(ac, sh)
+
+        features = self.features.detach()
+        next_features = self.next_features
+        assert features.shape[:-1] == ac.shape[:-1]
+        sh = features.shape
+
+        x = unflatten_first_dim(self.nsp_logit, sh)
+
+        ac_distr = self.idn_head(
+            self.idn(
+                torch.cat(
+                    [
+                        flatten_dims(next_features, 1),
+                        flatten_dims(features, 1),
+                    ],
+                    dim=-1,
+                )
+            )
+        )
+        # if np.random.rand() > 0.99:
+        #     moves = unflatten_first_dim(ac_distr, sh)
+        #     print("test")
+        #     print(features[0, 0, :].reshape(4, 4))
+        #     print(features[0, 1, :].reshape(4, 4))
+        #     print(F.softmax(moves[0, 0, :], dim=0))
+
+        sh = ac.shape
+        ac = flatten_dims(ac, 1)
+        pd = self.ac_pdtype.pdfromflat(ac_distr)
+        entropy = pd.entropy().mean()
+
+        ce = F.cross_entropy(
+            ac_distr,
+            torch.argmax(ac, dim=-1),
+            reduction="none",
+        )
+        return ce.reshape(sh[:-1])
+
     def get_loss(self):
         ac = self.ac
         sh = ac.shape
