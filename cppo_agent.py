@@ -281,7 +281,7 @@ class NSIOptimizer(object):
                     self.int_coeff *= 0.999
                 else:
                     self.int_coeff *= 1.001
-                self.int_coeff = min(max(0.01, self.int_coeff), ub)
+                self.int_coeff = min(max(0, self.int_coeff), ub)
                 # self.int_coeff = max(0.01, self.int_coeff)
                 # if np.random.rand() >= 0.95:
                 # print("No. steps to goal/OPT =", np.mean(rews) * 6)
@@ -357,11 +357,12 @@ class NSIOptimizer(object):
                     pg_loss_surr_IDN
                     * (
                         torch.where(
-                            torch.tensor(metric) > safety_threshold, 1, 0
+                            torch.tensor(metric) > safety_threshold,
+                            self.int_coeff,
+                            0.0,
                         )
                     ).flatten()
                 )
-
                 ent_loss = (-self.ent_coef) * entropy
 
                 approxkl = 0.5 * torch.mean((neglogpac - nlps) ** 2)
@@ -373,8 +374,7 @@ class NSIOptimizer(object):
                 # loss = torch.mean(
                 #     self.stochpol.get_loss_IDN() * metric_tensor_s
                 # )
-                # loss = pg_loss_IDN * 0.01
-                loss = pg_loss_IDN * 0.01
+                loss = pg_loss_IDN
                 # loss += torch.mean(self.stochpol.get_loss() * metric_tensor_s)
                 loss += torch.mean(self.stochpol.get_loss())
                 loss += pg_loss_NSN
