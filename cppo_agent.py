@@ -350,7 +350,17 @@ class NSIOptimizer(object):
                     ratio, min=1.0 - cliprange, max=1.0 + cliprange
                 )
                 pg_loss_surr_IDN = torch.max(pg_losses1_IDN, pg_losses2_IDN)
-                pg_loss_IDN = torch.mean(pg_loss_surr_IDN)
+                # pg_loss_IDN = torch.mean(
+                #     pg_loss_surr_IDN * metric_tensor_s.flatten()
+                # )
+                pg_loss_IDN = torch.mean(
+                    pg_loss_surr_IDN
+                    * (
+                        torch.where(
+                            torch.tensor(metric) > safety_threshold, 1, 0
+                        )
+                    ).flatten()
+                )
 
                 ent_loss = (-self.ent_coef) * entropy
 
@@ -360,9 +370,11 @@ class NSIOptimizer(object):
                     self.stochpol.idn_head.parameters()
                 )
 
-                loss = torch.mean(
-                    self.stochpol.get_loss_IDN() * metric_tensor_s
-                )
+                # loss = torch.mean(
+                #     self.stochpol.get_loss_IDN() * metric_tensor_s
+                # )
+                # loss = pg_loss_IDN * 0.01
+                loss = pg_loss_IDN * 0.01
                 # loss += torch.mean(self.stochpol.get_loss() * metric_tensor_s)
                 loss += torch.mean(self.stochpol.get_loss())
                 loss += pg_loss_NSN
