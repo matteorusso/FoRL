@@ -263,16 +263,17 @@ class NSIOptimizer(object):
                 # print(self.int_coeff)
 
                 # The minimal prob we want our NSN to give to the correct next state. The lower this is, the more we look for the reward.
-                # p_min should always be higher than 1/16.
+                # p_min should always be higher than 1/16. Setting 1/16 is approx equivalent to having no penalty on IDN.
                 p_min = 1 / 2
                 # p_min = 1 / 16
                 l = torch.tensor([p_min] + [(1 - p_min) / 15] * 15)
                 safety_threshold = F.cross_entropy(
                     torch.log(l).unsqueeze(0), torch.tensor(0).unsqueeze(0)
                 )
-                # Boundary of search
+                # Boundary of search. Cap penalty mult (lambda) at 0.99.
                 l = torch.tensor([1 / 16] * 16)
-                ub = F.cross_entropy(
+                max_value = 0.99
+                ub = np.log(2 / (1 + max_value) - 1) / -F.cross_entropy(
                     torch.log(l).unsqueeze(0), torch.tensor(0).unsqueeze(0)
                 )
 
@@ -281,7 +282,7 @@ class NSIOptimizer(object):
                 else:
                     self.int_coeff *= 1.001
                 self.int_coeff = min(max(0.01, self.int_coeff), ub)
-
+                # self.int_coeff = max(0.01, self.int_coeff)
                 # if np.random.rand() >= 0.95:
                 # print("No. steps to goal/OPT =", np.mean(rews) * 6)
                 vpreds = self.rollout.buf_vpreds[mbenvinds]
@@ -303,6 +304,7 @@ class NSIOptimizer(object):
                 self.stochpol.next_features = torch.cat(
                     [features[:, 1:, :], last_features], 1
                 )
+
                 metric_tensor_s = (
                     torch.sigmoid(torch.tensor(metric) * self.int_coeff) * 2
                     - 1
