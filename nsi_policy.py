@@ -147,7 +147,7 @@ class NSIPolicyMLP(object):
         ac = unflatten_first_dim(ac, sh)
 
         features = self.features.detach()
-        next_features = self.next_features
+        next_features = self.next_features.detach()
         assert features.shape[:-1] == ac.shape[:-1]
         sh = features.shape
 

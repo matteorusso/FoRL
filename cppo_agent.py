@@ -1,6 +1,7 @@
 import time
 from utils import flatten_dims
 import torch
+import torch.nn.functional as F
 import numpy as np
 from math_util import explained_variance
 from mpi_moments import mpi_moments
@@ -223,6 +224,8 @@ class NSIOptimizer(object):
             info["best_ext_ret"] = self.rollout.best_ext_ret
 
         to_report = {
+            "ext_reward": 0.0,
+            "ext_reward_std": 0.0,
             "loss": 0.0,
             "vfn_loss": 0.0,
             "metric": 0.0,
@@ -255,8 +258,32 @@ class NSIOptimizer(object):
                 acs = self.rollout.buf_acs[mbenvinds]
                 rews = self.rollout.buf_rews[mbenvinds]
                 metric = self.rollout.metric[mbenvinds]
+                # if np.random.rand() >= 0.99:
+                # print(metric_log[-1])
+                # print(self.int_coeff)
+
+                # The minimal prob we want our NSN to give to the correct next state. The lower this is, the more we look for the reward.
+                # p_min should always be higher than 1/16.
+                p_min = 1 / 2
+                # p_min = 1 / 16
+                l = torch.tensor([p_min] + [(1 - p_min) / 15] * 15)
+                safety_threshold = F.cross_entropy(
+                    torch.log(l).unsqueeze(0), torch.tensor(0).unsqueeze(0)
+                )
+                # Boundary of search
+                l = torch.tensor([1 / 16] * 16)
+                ub = F.cross_entropy(
+                    torch.log(l).unsqueeze(0), torch.tensor(0).unsqueeze(0)
+                )
+
+                if metric.mean() < safety_threshold:
+                    self.int_coeff *= 0.999
+                else:
+                    self.int_coeff *= 1.001
+                self.int_coeff = min(max(0.01, self.int_coeff), ub)
+
                 # if np.random.rand() >= 0.95:
-                #     print("No. steps to goal/OPT =", np.mean(rews)*6)
+                # print("No. steps to goal/OPT =", np.mean(rews) * 6)
                 vpreds = self.rollout.buf_vpreds[mbenvinds]
                 nlps = self.rollout.buf_nlps[mbenvinds]
                 obs = self.rollout.buf_obs[mbenvinds]
@@ -276,10 +303,17 @@ class NSIOptimizer(object):
                 self.stochpol.next_features = torch.cat(
                     [features[:, 1:, :], last_features], 1
                 )
+                metric_tensor_s = (
+                    torch.sigmoid(torch.tensor(metric) * self.int_coeff) * 2
+                    - 1
+                )
 
                 acs = torch.tensor(flatten_dims(acs, len(self.ac_space.shape)))
                 neglogpac = self.stochpol.pd.neglogp(acs)
-                entropy = torch.mean(self.stochpol.pd.entropy())
+                entropy = torch.mean(
+                    # (1 - metric_tensor_s.flatten()) *
+                    self.stochpol.pd.entropy()
+                )
                 vpred = self.stochpol.vpred
                 vf_nsn_loss = 0.5 * torch.mean(
                     (vpred[:, :, 0].squeeze() - torch.tensor(rets_NSN)) ** 2
@@ -304,7 +338,9 @@ class NSIOptimizer(object):
                     ratio, min=1.0 - cliprange, max=1.0 + cliprange
                 )
                 pg_loss_surr_NSN = torch.max(pg_losses1_NSN, pg_losses2_NSN)
-                pg_loss_NSN = torch.mean(pg_loss_surr_NSN)
+                pg_loss_NSN = torch.mean(
+                    pg_loss_surr_NSN  # * (1 - metric_tensor_s.flatten())
+                )
 
                 # Losses for IDN
                 pg_losses1_IDN = negadv_IDN * ratio
@@ -322,10 +358,11 @@ class NSIOptimizer(object):
                     self.stochpol.idn_head.parameters()
                 )
 
-                metric_tensor = torch.tensor(metric)
-                metric_tensor = torch.exp(metric_tensor) - 1
-                loss = torch.mean(self.stochpol.get_loss_IDN() * metric_tensor)
-                loss += torch.mean(self.stochpol.get_loss() * metric_tensor)
+                loss = torch.mean(
+                    self.stochpol.get_loss_IDN() * metric_tensor_s
+                )
+                # loss += torch.mean(self.stochpol.get_loss() * metric_tensor_s)
+                loss += torch.mean(self.stochpol.get_loss())
                 loss += pg_loss_NSN
                 loss += ent_loss
                 self.optimizer_NSN.zero_grad()
@@ -341,6 +378,12 @@ class NSIOptimizer(object):
                 to_report["loss"] += loss.data.numpy() / (
                     self.nminibatches * self.nepochs
                 )
+                to_report["ext_reward"] += np.mean(
+                    self.rollout.buf_ext_rews
+                ) / (self.nminibatches * self.nepochs)
+                to_report["ext_reward_std"] += np.std(
+                    self.rollout.buf_ext_rews
+                ) / (self.nminibatches * self.nepochs)
                 to_report["idn_pg_loss"] += pg_loss_IDN.data.numpy() / (
                     self.nminibatches * self.nepochs
                 )

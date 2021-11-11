@@ -10,11 +10,13 @@ import gym
 import numpy as np
 import logger
 
-_NP_TO_CT = {np.float32: ctypes.c_float,
-             np.int32: ctypes.c_int32,
-             np.int8: ctypes.c_int8,
-             np.uint8: ctypes.c_char,
-             np.bool: ctypes.c_bool}
+_NP_TO_CT = {
+    np.float32: ctypes.c_float,
+    np.int32: ctypes.c_int32,
+    np.int8: ctypes.c_int8,
+    np.uint8: ctypes.c_char,
+    np.bool: ctypes.c_bool,
+}
 _CT_TO_NP = {v: k for k, v in _NP_TO_CT.items()}
 
 
@@ -28,10 +30,12 @@ class CloudpickleWrapper(object):
 
     def __getstate__(self):
         import cloudpickle
+
         return cloudpickle.dumps(self.x)
 
     def __setstate__(self, ob):
         import pickle
+
         self.x = pickle.loads(ob)
 
 
@@ -95,11 +99,11 @@ class VecEnv(ABC):
         return self.step_wait()
 
     def render(self):
-        logger.warn('Render not defined for %s' % self)
+        logger.warn("Render not defined for %s" % self)
+
 
 class ShmemVecEnv(VecEnv):
-    """
-    """
+    """"""
 
     def __init__(self, env_fns, spaces=None):
         """
@@ -109,10 +113,13 @@ class ShmemVecEnv(VecEnv):
         if spaces:
             observation_space, action_space = spaces
         else:
-            logger.log('Creating dummy env object to get spaces')
+            logger.log("Creating dummy env object to get spaces")
             with logger.scoped_configure(format_strs=[]):
                 dummy = env_fns[0]()
-                observation_space, action_space = dummy.observation_space, dummy.action_space
+                observation_space, action_space = (
+                    dummy.observation_space,
+                    dummy.action_space,
+                )
                 dummy.close()
                 del dummy
         VecEnv.__init__(self, len(env_fns), observation_space, action_space)
@@ -129,6 +136,8 @@ class ShmemVecEnv(VecEnv):
         for i in range(self.num_envs):
             obs, rews, done, infos = self.envs[i].step(actions[i])
             if done:
+                # if obs != 15:
+                #     rews = -0.01
                 obs = self.envs[i].reset()
             outs.append([obs, rews, done, infos])
         obs, rews, dones, infos = zip(*outs)
@@ -140,6 +149,7 @@ class ShmemVecEnv(VecEnv):
     def close(self):
         for e in self.envs:
             e.close()
+
 
 ''' here is the origin implementation
 class ShmemVecEnv(VecEnv):
