@@ -353,13 +353,14 @@ class NSIOptimizer(object):
                 # pg_loss_IDN = torch.mean(
                 #     pg_loss_surr_IDN * metric_tensor_s.flatten()
                 # )
+                explore = True
                 pg_loss_IDN = torch.mean(
                     pg_loss_surr_IDN
                     * (
                         torch.where(
                             torch.tensor(metric) > safety_threshold,
-                            self.int_coeff,
-                            0.0,
+                            float(self.int_coeff),
+                            1 - float(self.int_coeff) if explore else 0.0,
                         )
                     ).flatten()
                 )
@@ -374,16 +375,18 @@ class NSIOptimizer(object):
                 # loss = torch.mean(
                 #     self.stochpol.get_loss_IDN() * metric_tensor_s
                 # )
+                loss = torch.mean(self.stochpol.get_loss())
+                self.optimizer_NSN.zero_grad()
+                loss.backward()
+                self.optimizer_NSN.step()
+
                 loss = pg_loss_IDN
                 # loss += torch.mean(self.stochpol.get_loss() * metric_tensor_s)
-                loss += torch.mean(self.stochpol.get_loss())
                 loss += pg_loss_NSN
                 loss += ent_loss
-                self.optimizer_NSN.zero_grad()
                 self.optimizer_IDN.zero_grad()
-                loss.backward()
+                loss.backward(inputs=idn_params)
                 self.optimizer_IDN.step()
-                self.optimizer_NSN.step()
 
                 self.optimizer_VFN.zero_grad()
                 VFN_loss.backward()
