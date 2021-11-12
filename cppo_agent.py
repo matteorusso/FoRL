@@ -353,7 +353,7 @@ class NSIOptimizer(object):
                 # pg_loss_IDN = torch.mean(
                 #     pg_loss_surr_IDN * metric_tensor_s.flatten()
                 # )
-                explore = True
+                explore = False
                 pg_loss_IDN = torch.mean(
                     pg_loss_surr_IDN
                     * (
