@@ -196,7 +196,11 @@ class NSIOptimizer(object):
             vpredmean=self.rollout.buf_vpreds.mean(),
             vpredstd=self.rollout.buf_vpreds.std(),
             rew_mean_ext=np.mean(self.rollout.buf_rews_ext),
+            rew_std_ext=np.std(self.rollout.buf_rews_ext),
             rew_mean_int=np.mean(self.rollout.buf_rews_int),
+            rew_std_int=np.std(self.rollout.buf_rews_int),
+            metricmean=np.mean(self.rollout.metric),
+            metricstd=np.std(self.rollout.metric),
         )
 
         if self.rollout.best_ext_ret is not None:
@@ -306,9 +310,6 @@ class NSIOptimizer(object):
                     self.nminibatches * self.nepochs
                 )
                 to_report["vfn_loss"] += VFN_loss.data.numpy() / (
-                    self.nminibatches * self.nepochs
-                )
-                to_report["metric"] += np.mean(metric) / (
                     self.nminibatches * self.nepochs
                 )
 
@@ -500,6 +501,7 @@ class PpoOptimizer(object):
                 self.rollout.buf_vpreds.ravel(), self.buf_rets.ravel()
             ),
             rew_mean=np.mean(self.rollout.buf_rews),
+            rew_mean_std=np.std(self.rollout.buf_rews),
             recent_best_ext_ret=self.rollout.current_max,
         )
         if self.rollout.best_ext_ret is not None:
