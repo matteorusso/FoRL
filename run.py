@@ -220,8 +220,7 @@ class Trainer(object):
             if info["update"]:
                 # print('Avg. reward =', info['update']['rew_mean'])
                 logger.logkvs(info["update"])
-            if np.random.rand() > 0.99:
-                logger.dumpkvs()
+            logger.dumpkvs()
             if self.agent.rollout.stats["tcount"] > self.num_timesteps:
                 break
 
@@ -264,7 +263,7 @@ def get_experiment_environment(**args):
     set_global_seeds(process_seed)
 
     logger_context = logger.scoped_configure(
-        dir="tmp", format_strs=["stdout", "log", "csv"]
+        dir="tmp", format_strs=["log", "csv"], log_suffix=args["log_suffix"]
     )
     return logger_context
 
@@ -284,6 +283,7 @@ def add_environments_params(parser):
     )
     parser.add_argument("--env_kind", type=str, default="atari")
     parser.add_argument("--noop_max", type=int, default=30)
+    parser.add_argument("--log_suffix", type=str, default="")
 
 
 def add_optimization_params(parser):

@@ -68,7 +68,7 @@ class NSIPolicyMLP(object):
 
         self.nsn_head = torch.nn.Linear(hidsize, feat_dim)
         self.idn_head = torch.nn.Linear(hidsize, pdparamsize)
-        self.vfn_head = torch.nn.Linear(hidsize, 2)
+        self.vfn_head = torch.nn.Linear(hidsize, 1)
 
         self.param_list_NSN = [
             dict(params=self.nsn.parameters()),

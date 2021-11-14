@@ -39,14 +39,11 @@ class Rollout(object):
             + int_rew_coeff * int_rew
         )
 
-        if self.policy.is_NSI:
-            self.buf_vpreds = np.empty((nenvs, self.nsteps, 2), np.float32)
-        else:
-            self.buf_vpreds = np.empty((nenvs, self.nsteps), np.float32)
+        self.buf_vpreds = np.empty((nenvs, self.nsteps), np.float32)
         self.buf_nlps = np.empty((nenvs, self.nsteps), np.float32)
         self.buf_rews = np.empty((nenvs, self.nsteps), np.float32)
-        self.buf_rews_NSN = np.empty((nenvs, self.nsteps), np.float32)
-        self.buf_rews_IDN = np.empty((nenvs, self.nsteps), np.float32)
+        self.buf_rews_ext = np.empty((nenvs, self.nsteps), np.float32)
+        self.buf_rews_int = np.empty((nenvs, self.nsteps), np.float32)
         self.buf_ext_rews = np.empty((nenvs, self.nsteps), np.float32)
         self.buf_acs = np.empty(
             (nenvs, self.nsteps, *self.ac_space.shape), self.ac_space.dtype
@@ -95,9 +92,9 @@ class Rollout(object):
             int_loss = self.policy.calculate_loss(
                 obs=self.buf_obs, last_obs=self.buf_obs_last, acs=self.buf_acs
             )
-            self.buf_rews_NSN[:] = self.reward_fun(self.buf_ext_rews, 0.0)
-            self.buf_rews_IDN[:] = -int_loss
-            self.metric = -self.buf_rews_IDN.copy()
+            self.buf_rews_ext[:] = self.buf_ext_rews
+            self.buf_rews_int[:] = int_loss
+            self.metric = int_loss
         else:
             int_rew = self.dynamics.calculate_loss(
                 obs=self.buf_obs, last_obs=self.buf_obs_last, acs=self.buf_acs

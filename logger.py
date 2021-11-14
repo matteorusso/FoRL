@@ -14,8 +14,8 @@ import tempfile
 import joblib
 from collections import defaultdict
 
-LOG_OUTPUT_FORMATS     = ['stdout', 'log', 'csv']
-LOG_OUTPUT_FORMATS_MPI = ['log']
+LOG_OUTPUT_FORMATS = ["stdout", "log", "csv"]
+LOG_OUTPUT_FORMATS_MPI = ["log"]
 # Also valid: json, tensorboard
 
 DEBUG = 10
@@ -38,10 +38,12 @@ class SeqWriter(object):
 class HumanOutputFormat(KVWriter, SeqWriter):
     def __init__(self, filename_or_file):
         if isinstance(filename_or_file, str):
-            self.file = open(filename_or_file, 'wt')
+            self.file = open(filename_or_file, "wt")
             self.own_file = True
         else:
-            assert hasattr(filename_or_file, 'read'), 'expected file or str, got %s'%filename_or_file
+            assert hasattr(filename_or_file, "read"), (
+                "expected file or str, got %s" % filename_or_file
+            )
             self.file = filename_or_file
             self.own_file = False
 
@@ -50,42 +52,45 @@ class HumanOutputFormat(KVWriter, SeqWriter):
         key2str = {}
         for (key, val) in sorted(kvs.items()):
             if isinstance(val, float):
-                valstr = '%-8.3g' % (val,)
+                valstr = "%-8.3g" % (val,)
             else:
                 valstr = str(val)
             key2str[self._truncate(key)] = self._truncate(valstr)
 
         # Find max widths
         if len(key2str) == 0:
-            print('WARNING: tried to write empty key-value dict')
+            print("WARNING: tried to write empty key-value dict")
             return
         else:
             keywidth = max(map(len, key2str.keys()))
             valwidth = max(map(len, key2str.values()))
 
         # Write out the data
-        dashes = '-' * (keywidth + valwidth + 7)
+        dashes = "-" * (keywidth + valwidth + 7)
         lines = [dashes]
         for (key, val) in sorted(key2str.items()):
-            lines.append('| %s%s | %s%s |' % (
-                key,
-                ' ' * (keywidth - len(key)),
-                val,
-                ' ' * (valwidth - len(val)),
-            ))
+            lines.append(
+                "| %s%s | %s%s |"
+                % (
+                    key,
+                    " " * (keywidth - len(key)),
+                    val,
+                    " " * (valwidth - len(val)),
+                )
+            )
         lines.append(dashes)
-        self.file.write('\n'.join(lines) + '\n')
+        self.file.write("\n".join(lines) + "\n")
 
         # Flush the output to the file
         self.file.flush()
 
     def _truncate(self, s):
-        return s[:20] + '...' if len(s) > 23 else s
+        return s[:20] + "..." if len(s) > 23 else s
 
     def writeseq(self, seq):
         for arg in seq:
             self.file.write(arg)
-        self.file.write('\n')
+        self.file.write("\n")
         self.file.flush()
 
     def close(self):
@@ -95,14 +100,14 @@ class HumanOutputFormat(KVWriter, SeqWriter):
 
 class JSONOutputFormat(KVWriter):
     def __init__(self, filename):
-        self.file = open(filename, 'wt')
+        self.file = open(filename, "wt")
 
     def writekvs(self, kvs):
         for k, v in sorted(kvs.items()):
-            if hasattr(v, 'dtype'):
+            if hasattr(v, "dtype"):
                 v = v.tolist()
                 kvs[k] = float(v)
-        self.file.write(json.dumps(kvs) + '\n')
+        self.file.write(json.dumps(kvs) + "\n")
         self.file.flush()
 
     def close(self):
@@ -111,9 +116,9 @@ class JSONOutputFormat(KVWriter):
 
 class CSVOutputFormat(KVWriter):
     def __init__(self, filename):
-        self.file = open(filename, 'w+t')
+        self.file = open(filename, "w+t")
         self.keys = []
-        self.sep = ','
+        self.sep = ","
 
     def writekvs(self, kvs):
         # Add our current row to the history
@@ -125,20 +130,20 @@ class CSVOutputFormat(KVWriter):
             self.file.seek(0)
             for (i, k) in enumerate(self.keys):
                 if i > 0:
-                    self.file.write(',')
+                    self.file.write(",")
                 self.file.write(k)
-            self.file.write('\n')
+            self.file.write("\n")
             for line in lines[1:]:
                 self.file.write(line[:-1])
                 self.file.write(self.sep * len(extra_keys))
-                self.file.write('\n')
+                self.file.write("\n")
         for (i, k) in enumerate(self.keys):
             if i > 0:
-                self.file.write(',')
+                self.file.write(",")
             v = kvs.get(k)
             if v is not None:
                 self.file.write(str(v))
-        self.file.write('\n')
+        self.file.write("\n")
         self.file.flush()
 
     def close(self):
@@ -149,16 +154,18 @@ class TensorBoardOutputFormat(KVWriter):
     """
     Dumps key/value pairs into TensorBoard's numeric format.
     """
+
     def __init__(self, dir):
         os.makedirs(dir, exist_ok=True)
         self.dir = dir
         self.step = 1
-        prefix = 'events'
+        prefix = "events"
         path = osp.join(osp.abspath(dir), prefix)
         import tensorflow as tf
         from tensorflow.python import pywrap_tensorflow
         from tensorflow.core.util import event_pb2
         from tensorflow.python.util import compat
+
         self.tf = tf
         self.event_pb2 = event_pb2
         self.pywrap_tensorflow = pywrap_tensorflow
@@ -166,11 +173,16 @@ class TensorBoardOutputFormat(KVWriter):
 
     def writekvs(self, kvs):
         def summary_val(k, v):
-            kwargs = {'tag': k, 'simple_value': float(v)}
+            kwargs = {"tag": k, "simple_value": float(v)}
             return self.tf.Summary.Value(**kwargs)
-        summary = self.tf.Summary(value=[summary_val(k, v) for k, v in kvs.items()])
+
+        summary = self.tf.Summary(
+            value=[summary_val(k, v) for k, v in kvs.items()]
+        )
         event = self.event_pb2.Event(wall_time=time.time(), summary=summary)
-        event.step = self.step # is there any reason why you'd want to specify the step?
+        event.step = (
+            self.step
+        )  # is there any reason why you'd want to specify the step?
         self.writer.WriteEvent(event)
         self.writer.Flush()
         self.step += 1
@@ -181,20 +193,23 @@ class TensorBoardOutputFormat(KVWriter):
             self.writer = None
 
 
-def make_output_format(format, ev_dir, log_suffix=''):
+def make_output_format(format, ev_dir, log_suffix=""):
     os.makedirs(ev_dir, exist_ok=True)
-    if format == 'stdout':
+    if format == "stdout":
         return HumanOutputFormat(sys.stdout)
-    elif format == 'log':
-        return HumanOutputFormat(osp.join(ev_dir, 'log%s.txt' % log_suffix))
-    elif format == 'json':
-        return JSONOutputFormat(osp.join(ev_dir, 'progress%s.json' % log_suffix))
-    elif format == 'csv':
-        return CSVOutputFormat(osp.join(ev_dir, 'progress%s.csv' % log_suffix))
-    elif format == 'tensorboard':
-        return TensorBoardOutputFormat(osp.join(ev_dir, 'tb%s' % log_suffix))
+    elif format == "log":
+        return HumanOutputFormat(osp.join(ev_dir, "log%s.txt" % log_suffix))
+    elif format == "json":
+        return JSONOutputFormat(
+            osp.join(ev_dir, "progress%s.json" % log_suffix)
+        )
+    elif format == "csv":
+        return CSVOutputFormat(osp.join(ev_dir, "progress%s.csv" % log_suffix))
+    elif format == "tensorboard":
+        return TensorBoardOutputFormat(osp.join(ev_dir, "tb%s" % log_suffix))
     else:
-        raise ValueError('Unknown format specified: %s' % (format,))
+        raise ValueError("Unknown format specified: %s" % (format,))
+
 
 # ================================================================
 # API
@@ -280,6 +295,7 @@ def get_dir():
 def save_itr_params(*args):
     return Logger.CURRENT.save_itr_params(*args)
 
+
 record_tabular = logkv
 dump_tabular = dumpkvs
 
@@ -290,12 +306,16 @@ class ProfileKV:
     with logger.ProfileKV("interesting_scope"):
         code
     """
+
     def __init__(self, n):
         self.n = "wait_" + n
+
     def __enter__(self):
         self.t1 = time.time()
-    def __exit__(self ,type, value, traceback):
+
+    def __exit__(self, type, value, traceback):
         Logger.CURRENT.name2val[self.n] += time.time() - self.t1
+
 
 def profile(n):
     """
@@ -303,11 +323,14 @@ def profile(n):
     @profile("my_func")
     def my_func(): code
     """
+
     def decorator_with_name(func):
         def func_wrapper(*args, **kwargs):
             with ProfileKV(n):
                 return func(*args, **kwargs)
+
         return func_wrapper
+
     return decorator_with_name
 
 
@@ -315,12 +338,15 @@ def profile(n):
 # Backend
 # ================================================================
 
+
 class Logger(object):
     DEFAULT = None  # A logger with no output files. (See right below class definition)
-                    # So that you can still log to the terminal without setting up any output files
+    # So that you can still log to the terminal without setting up any output files
     CURRENT = None  # Current logger being used by the free functions above
 
-    def __init__(self, dir, output_formats, snapshot_mode='last', snapshot_gap=1):
+    def __init__(
+        self, dir, output_formats, snapshot_mode="last", snapshot_gap=1
+    ):
         self.name2val = defaultdict(float)  # values this iteration
         self.name2cnt = defaultdict(int)
         self.level = INFO
@@ -339,11 +365,12 @@ class Logger(object):
             self.name2val[key] = None
             return
         oldval, cnt = self.name2val[key], self.name2cnt[key]
-        self.name2val[key] = oldval*cnt/(cnt+1) + val/(cnt+1)
+        self.name2val[key] = oldval * cnt / (cnt + 1) + val / (cnt + 1)
         self.name2cnt[key] = cnt + 1
 
     def dumpkvs(self):
-        if self.level == DISABLED: return
+        if self.level == DISABLED:
+            return
         for fmt in self.output_formats:
             if isinstance(fmt, KVWriter):
                 fmt.writekvs(self.name2val)
@@ -375,80 +402,109 @@ class Logger(object):
 
     def save_itr_params(self, itr, params):
         if self.dir:
-            if self.snapshot_mode == 'all':
-                file_name = osp.join(self.dir, 'itr_%d.pkl' % itr)
+            if self.snapshot_mode == "all":
+                file_name = osp.join(self.dir, "itr_%d.pkl" % itr)
                 joblib.dump(params, file_name, compress=3)
-            elif self.snapshot_mode == 'last':
+            elif self.snapshot_mode == "last":
                 # override previous params
-                file_name = osp.join(self.dir, 'params.pkl')
+                file_name = osp.join(self.dir, "params.pkl")
                 joblib.dump(params, file_name, compress=3)
             elif self.snapshot_mode == "gap":
                 if itr % self.snapshot_gap == 0:
-                    file_name = osp.join(self.dir, 'itr_%d.pkl' % itr)
+                    file_name = osp.join(self.dir, "itr_%d.pkl" % itr)
                     joblib.dump(params, file_name, compress=3)
-            elif self.snapshot_mode == 'last_gap':
+            elif self.snapshot_mode == "last_gap":
                 if itr % self.snapshot_gap == 0:
-                    file_name = osp.join(self.dir, 'params.pkl')
+                    file_name = osp.join(self.dir, "params.pkl")
                     joblib.dump(params, file_name, compress=3)
-            elif self.snapshot_mode == 'none':
+            elif self.snapshot_mode == "none":
                 pass
             else:
                 raise NotImplementedError
 
-Logger.DEFAULT = Logger.CURRENT = Logger(dir=None, output_formats=[HumanOutputFormat(sys.stdout)])
+
+Logger.DEFAULT = Logger.CURRENT = Logger(
+    dir=None, output_formats=[HumanOutputFormat(sys.stdout)]
+)
 
 
-def configure(dir=None, format_strs=None, snapshot_mode='last', snapshot_gap=1):
+def configure(
+    dir=None,
+    format_strs=None,
+    snapshot_mode="last",
+    snapshot_gap=1,
+    log_suffix="",
+):
     if dir is None:
-        dir = os.getenv('OPENAI_LOGDIR')
+        dir = os.getenv("OPENAI_LOGDIR")
     if dir is None:
-        dir = osp.join(tempfile.gettempdir(),
-            datetime.datetime.now().strftime("openai-%Y-%m-%d-%H-%M-%S-%f"))
+        dir = osp.join(
+            tempfile.gettempdir(),
+            datetime.datetime.now().strftime("openai-%Y-%m-%d-%H-%M-%S-%f"),
+        )
     assert isinstance(dir, str)
     os.makedirs(dir, exist_ok=True)
 
-    log_suffix = ''
     from mpi4py import MPI
+
     rank = MPI.COMM_WORLD.Get_rank()
     if rank > 0:
         log_suffix = "-rank%03i" % rank
 
     if format_strs is None:
-        strs, strs_mpi = os.getenv('OPENAI_LOG_FORMAT'), os.getenv('OPENAI_LOG_FORMAT_MPI')
-        format_strs = strs_mpi if rank>0 else strs
+        strs, strs_mpi = os.getenv("OPENAI_LOG_FORMAT"), os.getenv(
+            "OPENAI_LOG_FORMAT_MPI"
+        )
+        format_strs = strs_mpi if rank > 0 else strs
         if format_strs is not None:
-            format_strs = format_strs.split(',')
+            format_strs = format_strs.split(",")
         else:
-            format_strs = LOG_OUTPUT_FORMATS_MPI if rank>0 else LOG_OUTPUT_FORMATS
+            format_strs = (
+                LOG_OUTPUT_FORMATS_MPI if rank > 0 else LOG_OUTPUT_FORMATS
+            )
 
-    output_formats = [make_output_format(f, dir, log_suffix) for f in format_strs]
+    output_formats = [
+        make_output_format(f, dir, log_suffix) for f in format_strs
+    ]
 
-    Logger.CURRENT = Logger(dir=dir, output_formats=output_formats, snapshot_mode=snapshot_mode, snapshot_gap=snapshot_gap)
-    log('Logging to %s'%dir)
+    Logger.CURRENT = Logger(
+        dir=dir,
+        output_formats=output_formats,
+        snapshot_mode=snapshot_mode,
+        snapshot_gap=snapshot_gap,
+    )
+    log("Logging to %s" % dir)
 
 
 def reset():
     if Logger.CURRENT is not Logger.DEFAULT:
         Logger.CURRENT.close()
         Logger.CURRENT = Logger.DEFAULT
-        log('Reset logger')
+        log("Reset logger")
 
 
 class scoped_configure(object):
-    def __init__(self, dir=None, format_strs=None):
+    def __init__(self, dir=None, format_strs=None, log_suffix=""):
         self.dir = dir
         self.format_strs = format_strs
         self.prevlogger = None
+        self.log_suffix = log_suffix
 
     def __enter__(self):
         self.prevlogger = Logger.CURRENT
-        configure(dir=self.dir, format_strs=self.format_strs)
+        configure(
+            dir=self.dir,
+            format_strs=self.format_strs,
+            log_suffix=self.log_suffix,
+        )
 
     def __exit__(self, *args):
         Logger.CURRENT.close()
         Logger.CURRENT = self.prevlogger
 
+
 # ================================================================
+
 
 def _demo():
     info("hi")
@@ -458,7 +514,7 @@ def _demo():
     dir = "/tmp/testlogging"
     if os.path.exists(dir):
         shutil.rmtree(dir)
-    configure(dir=dir, format_strs=['stdout', 'log', 'csv'])
+    configure(dir=dir, format_strs=["stdout", "log", "csv"])
     logkv("a", 3)
     logkv("b", 2.5)
     dumpkvs()
