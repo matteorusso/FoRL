@@ -5,7 +5,7 @@ import numpy as np
 from math_util import explained_variance
 from mpi_moments import mpi_moments
 from running_mean_std import RunningMeanStd
-
+import torch.nn.functional as F
 from rollouts import Rollout
 from utils import get_mean_and_std
 from vec_env import ShmemVecEnv as VecEnv
@@ -160,7 +160,27 @@ class NSIOptimizer(object):
             rews_ext = np.copy(self.rollout.buf_rews_ext)
             rews_int = np.copy(self.rollout.buf_rews_int)
 
-        rews = self.ext_coeff * rews_ext + self.int_coeff * rews_int
+        use_threshold = False
+        # The minimal prob we want our NSN to give to the correct next state. The lower this is, the more we look for the reward.
+        # p_min should always be higher than 1/16. Setting 1/16 is approx equivalent to having no penalty on IDN.
+        p_min = 1 / 2
+        # p_min = 1 / self.ob_space.n
+        l = torch.tensor(
+            [p_min]
+            + [(1 - p_min) / (self.ob_space.n - 1)] * (self.ob_space.n - 1)
+        )
+        safety_threshold = F.cross_entropy(
+            torch.log(l).unsqueeze(0), torch.tensor(0).unsqueeze(0)
+        )
+        if use_threshold:
+            safe = np.where(
+                self.rollout.metric <= safety_threshold.item(),
+                1,
+                -1,
+            )
+        else:
+            safe = 1
+        rews = self.ext_coeff * rews_ext + self.int_coeff * safe * rews_int
         self.calculate_advantages(
             rews=rews,
             use_news=self.use_news,
