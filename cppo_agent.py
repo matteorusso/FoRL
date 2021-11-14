@@ -296,8 +296,11 @@ class NSIOptimizer(object):
                 IDN_loss.backward(inputs=idn_params)
                 self.optimizer_IDN.step()
 
+                vfn_params = list(self.stochpol.vfn.parameters()) + list(
+                    self.stochpol.vfn_head.parameters()
+                )
                 self.optimizer_VFN.zero_grad()
-                VFN_loss.backward()
+                VFN_loss.backward(inputs=vfn_params)
                 self.optimizer_VFN.step()
 
                 to_report["nsn_loss"] += NSN_loss.data.numpy() / (

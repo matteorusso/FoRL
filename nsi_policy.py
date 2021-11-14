@@ -59,7 +59,7 @@ class NSIPolicyMLP(object):
             layernormalize=self.layernormalize,
         )
         self.vfn = small_mlp(
-            self.ob_space.n,
+            2 * self.ob_space.n,
             nl=self.nl,
             hidsize=self.hidsize,
             last_nl=F.leaky_relu,
@@ -111,7 +111,7 @@ class NSIPolicyMLP(object):
             self.idn(torch.cat([nsp, flat_features], dim=-1))
         )
         # Get current value function prediction <-- VFN
-        vfp = self.vfn_head(self.vfn(flat_features))
+        vfp = self.vfn_head(self.vfn(torch.cat([nsp, flat_features], dim=-1)))
 
         self.nsp_logit = nsp_logit
         self.vpred = unflatten_first_dim(vfp, sh)  # [nenvs, timestep, v]
