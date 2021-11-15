@@ -164,13 +164,20 @@ class NSIPolicyMLP(object):
         #     print(next_features[0, 3, :].reshape(4, 4))
         #     print(F.softmax(x, dim=-1)[0, 3, :].reshape(4, 4))
         sh = x.shape
+        ps = np.array(torch.softmax(x, dim=-1).detach())
+        entropy = np.sum(-ps * np.where(ps < 1e-5, 0.0, np.log(ps)), axis=-1)
+
+        # entropy = np.mean(
+        #     np.sum(-ps * np.where(ps < 1e-5, 0.0, np.log(ps)), axis=1)
+        # )
+
         ce = F.cross_entropy(
             flatten_dims(x, 1),
             torch.argmax(flatten_dims(next_features, 1), dim=-1),
             reduction="none",
         )
         # ce = torch.sum((F.softmax(x, dim=-1) - next_features) ** 2, dim=-1)
-        return ce.reshape(sh[:-1])
+        return ce.reshape(sh[:-1]), entropy
 
     def calculate_loss(self, obs, last_obs, acs):
         n_chunks = 4
@@ -193,12 +200,15 @@ class NSIPolicyMLP(object):
                 [features[:, 1:, :], last_features], 1
             )
 
-            loss = self.get_loss()
+            loss, entropy = self.get_loss()
             if losses is None:
                 losses = loss
+                entropies = entropy
             else:
                 losses = torch.cat((losses, loss), 0)
-        return losses.data.numpy()
+                entropies = np.concatenate((entropies, entropy), 0)
+
+        return losses.data.numpy(), entropies
 
     def get_ac_value_nlp(self, ob):
         self.update_features(ob, None)

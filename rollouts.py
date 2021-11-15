@@ -89,12 +89,12 @@ class Rollout(object):
 
     def calculate_reward(self):
         if self.policy.is_NSI:
-            int_loss = self.policy.calculate_loss(
+            int_loss, state_entropy = self.policy.calculate_loss(
                 obs=self.buf_obs, last_obs=self.buf_obs_last, acs=self.buf_acs
             )
             self.buf_rews_ext[:] = self.buf_ext_rews
-            self.buf_rews_int[:] = int_loss
             self.metric = int_loss
+            self.buf_rews_int[:] = int_loss - state_entropy
         else:
             int_rew = self.dynamics.calculate_loss(
                 obs=self.buf_obs, last_obs=self.buf_obs_last, acs=self.buf_acs

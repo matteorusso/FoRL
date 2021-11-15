@@ -201,6 +201,9 @@ class NSIOptimizer(object):
             rew_std_int=np.std(self.rollout.buf_rews_int),
             metricmean=np.mean(self.rollout.metric),
             metricstd=np.std(self.rollout.metric),
+            p_below_line=np.mean(
+                self.rollout.metric > float(safety_threshold)
+            ),
         )
 
         if self.rollout.best_ext_ret is not None:
@@ -211,7 +214,6 @@ class NSIOptimizer(object):
             "idn_loss": 0.0,
             "idn_pg_loss": 0.0,
             "vfn_loss": 0.0,
-            "metric": 0.0,
         }
 
         # normalize advantages
@@ -280,7 +282,7 @@ class NSIOptimizer(object):
                 ent_loss = (-self.ent_coef) * entropy
 
                 approxkl = 0.5 * torch.mean((neglogpac - nlps) ** 2)
-                NSN_loss = self.stochpol.get_loss().mean()
+                NSN_loss = self.stochpol.get_loss()[0].mean()
 
                 self.optimizer_NSN.zero_grad()
                 NSN_loss.backward(
